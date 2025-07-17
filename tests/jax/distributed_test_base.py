@@ -52,7 +52,6 @@ def generate_context_parallel_configs():
             configs.append(
                 pytest.param(ndev, (dp, cp, tp), axes, mr, id=f"n{ndev}_dp{dp}_cp{cp}_tp{tp}")
             )
-
     return configs
 
 

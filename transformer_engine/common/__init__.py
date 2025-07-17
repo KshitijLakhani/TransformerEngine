@@ -191,21 +191,18 @@ def _load_nvidia_cuda_library(lib_name: str):
 
     `lib_name`: Name of package as found in the `nvidia` dir in python environment.
     """
-
     so_paths = glob.glob(
         os.path.join(
             sysconfig.get_path("purelib"),
             f"nvidia/{lib_name}/lib/lib*{_get_sys_extension()}.*[0-9]",
         )
     )
-
     path_found = len(so_paths) > 0
     ctypes_handles = []
 
     if path_found:
         for so_path in so_paths:
             ctypes_handles.append(ctypes.CDLL(so_path, mode=ctypes.RTLD_GLOBAL))
-
     return path_found, ctypes_handles
 
 
@@ -245,7 +242,6 @@ def _load_cudnn():
     found, handle = _load_nvidia_cuda_library("cudnn")
     if found:
         return handle
-
     # If all else fails, assume that it is in LD_LIBRARY_PATH and error out otherwise
     return ctypes.CDLL(f"libcudnn{_get_sys_extension()}", mode=ctypes.RTLD_GLOBAL)
 
