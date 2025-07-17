@@ -162,6 +162,7 @@ def make_mask(
     inv_mask = make_attention_mask(
         segment_ids_q, segment_ids_kv, lambda x, y: (jnp.logical_and(jnp.equal(x, y), x != 0))
     )
+    jax.debug.breakpoint()
 
     if segment_pos_q is None:
         segment_pos_q = jnp.broadcast_to(
@@ -202,9 +203,11 @@ def get_seqlens_and_offsets(segment_ids):
         ).squeeze(-1)
 
     offsets = _find_offsets(segment_ids)
+    jax.debug.breakpoint()
     offsets = jnp.insert(offsets, offsets.shape[-1], values=-1, axis=-1)
     seqlens = jnp.insert(seqlens, seqlens.shape[-1], values=0, axis=-1)
     seqlens = jnp.where(seqlens, seqlens, -1)
+    jax.debug.breakpoint()
     return seqlens, offsets
 
 
@@ -432,10 +435,21 @@ class FusedAttnRunner:
             bias_shape = (1, 1, self.max_seqlen_q, self.max_seqlen_kv)
         else:
             pytest.fail(f"PyTest attempted to use an unrecognized bias_layout = {self.bias_shape}!")
-
-        self.q = jax.random.uniform(q_key, q_shape, self.dtype, -1.0)
-        self.k = jax.random.uniform(k_key, k_shape, self.dtype, -1.0)
-        self.v = jax.random.uniform(v_key, v_shape, self.dtype, -1.0)
+        # self.q = jax.random.uniform(q_key, q_shape, self.dtype, -1.0)
+        # self.k = jax.random.uniform(k_key, k_shape, self.dtype, -1.0)
+        # self.v = jax.random.uniform(v_key, v_shape, self.dtype, -1.0)
+        q_np = np.zeros(q_shape, self.dtype)
+        k_np = np.zeros(k_shape, self.dtype)
+        # Set seq 0, token 12 and head 0
+        token_numbers = range(self.max_seqlen_q)
+        for token_idx in token_numbers:
+            q_np[0][token_idx][0] = np.ones(self.head_dim_qk, self.dtype) * token_idx
+        k_np[0][15][0] = np.ones(self.head_dim_qk, self.dtype)*np.sqrt(self.head_dim_qk)
+        v_np = np.ones(v_shape, self.dtype)
+        self.q = jnp.array(q_np)
+        self.k = jnp.array(k_np)
+        self.v = jnp.array(v_np)
+        breakpoint()
 
         if self.attn_bias_type != AttnBiasType.NO_BIAS:
             if self.bias_shape == BiasShape._1HSS:
@@ -514,10 +528,20 @@ class FusedAttnRunner:
             return segment_ids, segment_pos, segment_pad
 
         if self.qkv_layout.is_thd():
-            self.num_segments_per_seq = 2
+            self.num_segments_per_seq = 3
             self.segment_ids_q, self.segment_pos_q, self.pad_q = generate_random_segment_ids(
                 self.batch_size, self.max_seqlen_q, self.num_segments_per_seq, seed=42
             )
+            # Insert custom segment ids and pos and q to replicate test behavior
+            self.segment_ids_q = np.array([[1, 2, 2, 2, 2, 2, 2, 0, 0, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                                           [1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], dtype=np.int32)
+            
+            self.segment_pos_q = np.array([[0, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                                           [0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 2, 3, 4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], dtype=np.int32)
+            
+            self.pad_q = np.array([[0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                                   [0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]], dtype=np.int32)
+            breakpoint()
             self.seqlens_q, self.offsets_q = get_seqlens_and_offsets(self.segment_ids_q)
             # TODO(rewang): record only self attention and find the reason of cross attention
             if self.qkv_layout == QKVLayout.T3HD or self.max_seqlen_q == self.max_seqlen_kv:
@@ -546,6 +570,7 @@ class FusedAttnRunner:
             self.segment_pos_q = self.segment_pos_kv = None
             self.seqlens_q = self.seqlens_kv = self.offsets_q = self.offsets_kv = None
 
+        breakpoint()
         # For reference code
         self.mask = make_mask(
             self.segment_ids_q,
@@ -575,13 +600,16 @@ class FusedAttnRunner:
                 cp_size=self.cp_size,
                 seq_dim=seq_dim,
             )
+            breakpoint()
         else:
             # no-ops for non cp or non load balanced
             self.cp_reorder_fn = lambda x: x
             self.cp_inverse_reorder_fn = lambda x: x
+            breakpoint()
 
         # Test different input formats
         if self.qkv_layout.is_thd():
+            breakpoint()
             match self.seq_desc_format:
                 case SeqDescFormat.Mask:
                     pytest.skip("THD doesn't support mask input")
@@ -664,7 +692,7 @@ class FusedAttnRunner:
                     return NamedSharding(self.mesh, pspec)
 
                 self.seq_desc_sharding = jax.tree.map(to_dp_shardings, self.sequence_desciptor)
-
+        breakpoint()
         if self.bias_shape == BiasShape._1HSS:
             self.bias_pspec = PartitionSpec(
                 None, self.mesh_resource.tpsp_resource, self.mesh_resource.cp_resource, None
@@ -853,7 +881,7 @@ class FusedAttnRunner:
                 arg_nums,
             )
         )
-
+        breakpoint()
         with self.mesh, fp8_autocast(mesh_resource=self.mesh_resource):
             primitive_out, primitive_dgrad = jitted_primitive(*customcall_args)
 
@@ -866,6 +894,7 @@ class FusedAttnRunner:
         print_debug_tensor_stats(f"primitive_out", primitive_out)
         print_debug_tensor_stats(f"reference_grad_valid", reference_out)
         print_debug_tensor_stats(f"diff_grad", jnp.abs(primitive_out - reference_out))
+
         assert_allclose(primitive_out, reference_out, dtype=self.dtype)
 
         def check_dqkv(primitive, reference, pad, idx):
@@ -885,7 +914,7 @@ class FusedAttnRunner:
 
         primitive_dq, primitive_dk, primitive_dv = primitive_dgrad[:3]
         reference_dq, reference_dk, reference_dv = reference_dgrad[:3]
-
+        breakpoint()
         primitive_dq = self.cp_inverse_reorder_fn(primitive_dq)
         primitive_dk = self.cp_inverse_reorder_fn(primitive_dk)
         primitive_dv = self.cp_inverse_reorder_fn(primitive_dv)
