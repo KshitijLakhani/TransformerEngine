@@ -891,6 +891,8 @@ void nvte_fused_attn_fwd(const NVTETensor Q, const NVTETensor K, const NVTETenso
   if (input_page_table_v->data.dptr != nullptr) {
     max_pages_per_seq_v = input_page_table_v->data.shape[1];
   }
+  std::cout << "nvte_fused_attn_fwd()" << " ndim:" << ndim << " ndim_kv:" << ndim_kv << " b:" << b
+            << " t_q:" << t_q << " t_kv:" << t_kv << std::endl;
   NVTE_QKV_Layout_Group layout_group = nvte_get_qkv_layout_group(qkv_layout);
   if (layout_group == NVTE_QKV_Layout_Group::NVTE_Paged_KV_HD_HD_HD) {
     NVTE_QKV_Format kv_format = nvte_get_kv_format(qkv_layout);
@@ -914,7 +916,7 @@ void nvte_fused_attn_fwd(const NVTETensor Q, const NVTETensor K, const NVTETenso
   NVTE_Fused_Attn_Backend fused_attention_backend = nvte_get_fused_attn_backend(
       is_training, Q_type, KV_type, qkv_layout, bias_type, attn_mask_type, softmax_type, dropout,
       h_q, h_kv, max_seqlen_q, max_seqlen_kv, d_qk, d_v, window_size_left, window_size_right);
-
+  std::cout << "fused_attention_backend: " << fused_attention_backend << std::endl;
   if (fused_attention_backend == NVTE_Fused_Attn_Backend::NVTE_F16_max512_seqlen) {
 #if (CUDNN_VERSION >= 8901)
     fused_attn_max_512_fwd(b, h_q, max_seqlen_q, max_seqlen_kv, d_qk, is_training, attn_scale,

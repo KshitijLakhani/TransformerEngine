@@ -385,7 +385,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
         wkspace_aval = q_aval.update(
             shape=wkspace_info[0], dtype=te_dtype_to_jax_dtype(wkspace_info[1])
         )
-
+        #breakpoint()
         return out_aval, softmax_aux_aval, rng_state_aval, wkspace_aval
 
     @staticmethod
@@ -446,7 +446,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
         else:
             window_size_left = config.window_size[0]
             window_size_right = config.window_size[1]
-
+        #breakpoint()
         return ffi.ffi_lowering(FusedAttnFwdPrimitive.name)(
             ctx,
             q,
@@ -508,7 +508,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
             segment_ids=(_q_segment_ids, _kv_segment_ids),
             segment_pos=(_q_segment_pos, _kv_segment_pos),
         )
-
+        # breakpoint()
         (q_seqlen, kv_seqlen), (q_seq_offsets, k_seq_offsets) = (
             sequence_descriptor.get_seqlens_and_offsets(
                 config.attn_mask_type,
@@ -590,6 +590,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
             _kv_segment_pos,
             config=config,
         )
+        # breakpoint()
         return output, softmax_aux, rng_state
 
     @staticmethod
@@ -599,6 +600,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
         q_bdim, _, _, _, seed_bdim, *_ = batch_dims
 
         out_bdims = q_bdim, q_bdim, seed_bdim
+        #breakpoint()
         return (
             FusedAttnFwdPrimitive.outer_primitive.bind(*batched_args, config=config),
             out_bdims,
@@ -656,6 +658,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
 
     @staticmethod
     def partition(config, mesh, arg_infos, result_infos):
+        #breakpoint()
         out_sharding = result_infos[0].sharding
         softmax_aux_sharding = result_infos[1].sharding
         rng_state_sharding = seed_sharding = NamedSharding(
@@ -667,6 +670,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
         arg_shardings[-2] = arg_shardings[-4]
         arg_shardings = tuple(arg_shardings)
         out_shardings = (out_sharding, softmax_aux_sharding, rng_state_sharding)
+        #breakpoint()
         impl = partial(FusedAttnFwdPrimitive.impl, config=config)
         return mesh, impl, out_shardings, arg_shardings
 
@@ -1125,7 +1129,7 @@ def reorder_causal_dual_chunk_swap(tensor, cp_size: int, seq_dim: int, to_contig
     if tensor.shape[seq_dim] % (cp_size * 2) != 0:
         raise ValueError(f"{tensor.shape[seq_dim]=} is not a multiple of {cp_size*2=}")
 
-    # [B, S, H, D] -> [B, 2*cp_size, S/2*cp_size, D]
+    # [B, S, H, D] -> [B, 2*cp_size, S/2*cp_size, H, D]
     # [S, B, H, D] -> [2*cp_size, S/2*cp_size, B, H, D]
     ori_tensor_shape = tensor.shape
     tensor = tensor.reshape(
@@ -1161,7 +1165,7 @@ def reorder_causal_dual_chunk_swap(tensor, cp_size: int, seq_dim: int, to_contig
     # [B, S, H, D]: [B, 2*cp_size, S/2*cp_size, H, D]
     # [S, B, H, D]: [2*cp_size, S/2*cp_size, B, H, D]
     combined = jnp.stack(parts, axis=seq_dim)
-
+    #jax.debug.breakpoint()
     return combined.reshape(ori_tensor_shape)
 
 
@@ -1255,14 +1259,18 @@ class _FusedAttnCPWithAllGatherHelper:
         """Performs a all-gather of k and v over context parallel ranks."""
 
         def ag(x):
+            print(f"[Debug] self.config.cp_axis: {self.config.cp_axis}")
+            jax.debug.print("x before = {}", x)
             x = lax_paral_op(
                 x, lax.all_gather, self.config.cp_axis, mesh=self.mesh, axis=1, tiled=True
             )
+            jax.debug.print("x after = {}", x)
             if self.config.context_parallel_load_balanced:
                 cp_size = get_mesh_axis_size(self.config.cp_axis, self.mesh)
                 x = reorder_causal_dual_chunk_swap(x, cp_size, 1, to_contiguous=True)
+            # jax.debug.breakpoint()
             return x
-
+        
         if self.config.qkv_layout.is_kvpacked():
             return ag(k), v
         if self.config.qkv_layout.is_separate():
@@ -1309,6 +1317,7 @@ class _FusedAttnCPWithAllGatherHelper:
            cp_rank 2: [384, 768]
            cp_rank 3: [512, 640]
         """
+        #jax.debug.breakpoint()
         if self.config.context_parallel_load_balanced:
             kv_seq_this_rank = [
                 (cp_rank + 1) * kv_seqlen_per_subrank,
@@ -1319,6 +1328,8 @@ class _FusedAttnCPWithAllGatherHelper:
                 (cp_rank * 2 + 1) * kv_seqlen_per_subrank,
                 (cp_rank * 2 + 2) * kv_seqlen_per_subrank,
             ]
+        #jax.debug.breakpoint()
+        #jax.debug.print(f"kv_seqlen_per_subrank: {kv_seqlen_per_subrank},kv_seq_this_rank: {kv_seq_this_rank}")
         return kv_seq_this_rank
 
     def slice_kv(self, k, v, slice_seq_len):
@@ -1378,6 +1389,7 @@ class FusedAttnCPWithAllGatherFwdPrimitive(FusedAttnFwdPrimitive):
         arg_shardings = [arg_i.sharding for arg_i in arg_infos]
         arg_shardings[4] = seed_sharding
         arg_shardings = tuple(arg_shardings)
+        #jax.debug.breakpoint()
         out_shardings = (out_sharding, softmax_aux_sharding, rng_state_sharding)
 
         def impl(
@@ -1425,7 +1437,7 @@ class FusedAttnCPWithAllGatherFwdPrimitive(FusedAttnFwdPrimitive):
                     q_seqlen_for_step = q_seqlen / (cp_size * 2)
                     num_kv_chunks = kv_max_seqlen // kv_seqlens_for_rank[sub_idx]
                     kv_seqlen_for_step = (kv_seqlen / (cp_size * 2)) * num_kv_chunks
-
+                    #jax.debug.breakpoint() # inspect the segment pos etc
                     output, softmax_aux, rng_state = FusedAttnFwdPrimitive.impl(
                         q_split[sub_idx],
                         k_unmasked,
@@ -1451,7 +1463,9 @@ class FusedAttnCPWithAllGatherFwdPrimitive(FusedAttnFwdPrimitive):
                 return output, softmax_aux, rng_state
 
             k_ag, v_ag = helper.all_gather_kv(k, v)
-
+            jax.debug.print("k_ag= {}", k_ag)
+            jax.debug.print("v_ag= {}", v_ag)
+            #jax.debug.breakpoint()
             functions = [
                 partial(_cross_attn, idx, q, k_ag, v_ag, bias, q_seqlen, kv_seqlen, seed)
                 for idx in range(cp_size)
@@ -1482,7 +1496,7 @@ class FusedAttnCPWithAllGatherBwdPrimitive(FusedAttnBwdPrimitive):
         ), "Sliding window attention is not supported when context parallelism is enabled"
         if not is_context_parallel:
             return FusedAttnBwdPrimitive.partition(config, mesh, arg_infos, result_infos)
-
+        #jax.debug.breakpoint()
         # Ensure we can support this configuration with context parallelism.
         helper = _FusedAttnCPWithAllGatherHelper(mesh, config)
         helper.check_supported()
@@ -1550,7 +1564,7 @@ class FusedAttnCPWithAllGatherBwdPrimitive(FusedAttnBwdPrimitive):
                 kv_seqlens_for_rank = helper.kv_seqlens_for_rank(
                     idx, kv_max_seqlen, kv_seqlen_per_subrank
                 )
-
+                #jax.debug.breakpoint()
                 results = []
                 for sub_idx in range(2):
                     if config.attn_mask_type == AttnMaskType.NO_MASK:
@@ -1595,6 +1609,9 @@ class FusedAttnCPWithAllGatherBwdPrimitive(FusedAttnBwdPrimitive):
                 return dq_local, dk_local_pad, dv_local_pad, results[1][3]
 
             k_ag, v_ag = helper.all_gather_kv(k, v)
+            jax.debug.print("k_ag= {}", k_ag)
+            jax.debug.print("v_ag= {}", v_ag)
+            #jax.debug.breakpoint()
 
             functions = [
                 partial(
@@ -1786,6 +1803,7 @@ class FusedRingAttnFwdPrimitive(FusedAttnFwdPrimitive):
         arg_shardings[4] = seed_sharding
         arg_shardings = tuple(arg_shardings)
         out_shardings = (out_sharding, softmax_aux_sharding, rng_state_sharding)
+        #jax.debug.breakpoint()
 
         def ring_attn_fwd_impl(
             q,
@@ -2267,6 +2285,7 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
         arg_shardings[4] = seed_sharding
         arg_shardings = tuple(arg_shardings)
         out_shardings = (out_sharding, softmax_aux_sharding, rng_state_sharding)
+        #breakpoint()
 
         def fwd_impl(
             q,
@@ -2287,7 +2306,7 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
                 raise ValueError("THD + ring attn only supports passing seqment_ids/pos")
 
             _not_used = jnp.zeros(0, dtype=v.dtype)
-
+            #breakpoint()
             # Combine KV tensors if separate for better permute scheduling and performance.
             # Eventually XLA should perform this automatically.
             kv = helper.stack_kv(k, v)
@@ -2303,7 +2322,7 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
             batch, q_max_seqlen, head, _ = q.shape
             output = jnp.zeros(q.shape).astype(jnp.float32)
             softmax_aux = jnp.zeros((batch, q_max_seqlen, head, 1), dtype=jnp.float32)
-
+            #breakpoint()
             # RNG shape should be the shared shape. This is unused for ring attention as we do not
             # support dropout currently.
             rng_state_shape = (seed.shape[0], *result_infos[2].shape[1:])
@@ -2311,14 +2330,19 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
 
             def scan_kv_block(idx, carry):
                 kv, kv_segment_ids, kv_segment_pos, output, softmax_aux = carry
-
+                #breakpoint()
+                #jax.debug.breakpoint()
                 # TODO(rewang): To check whether we need special handle for the last idx
                 # Send KV block to next step so we can overlap compute.
                 kv_next = helper.permute_kv(kv, cp_perm)
                 kv_segment_ids_next = helper.permute_kv(kv_segment_ids, cp_perm)
                 kv_segment_pos_next = helper.permute_kv(kv_segment_pos, cp_perm)
+                #breakpoint()
+                #jax.debug.breakpoint() # to examine the ids and pos for striding
 
                 def compute(config):
+                    #breakpoint()
+                    #jax.debug.breakpoint()
                     return FusedAttnFwdPrimitive.impl(
                         q,
                         kv,
@@ -2373,7 +2397,8 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
                     output_per_step,
                     softmax_aux_per_step,
                 )
-
+                #breakpoint()
+                #jax.debug.breakpoint()
                 return (kv_next, kv_segment_ids_next, kv_segment_pos_next, output, softmax_aux)
 
             carry = (kv, kv_segment_ids, kv_segment_pos, output, softmax_aux)

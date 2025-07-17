@@ -282,6 +282,7 @@ DISTRIBUTED_CONTEXT_SELF_ATTN_DATA_SHAPES = [
     # Sequence lengths will be scaled by CP so that we don't run with tiny sizes.
     pytest.param([2, 128, 8, 128], id="2-128xCP-8-128"),
     pytest.param([4, 256, 16, 64], id="4-256xCP-16-64"),
+    pytest.param([2, 4, 16, 32], id="2-4xCP-16-32"), # only for testing striping
 ]
 
 
@@ -332,6 +333,7 @@ class TestDistributedContextParallelSelfAttn:
         data_shape = batch, seqlen, num_head, hidden
 
         num_kv_heads = num_head // kv_groups
+        breakpoint()
 
         runner = FusedAttnRunner(
             batch,
@@ -381,6 +383,7 @@ class TestDistributedContextParallelSelfAttn:
         # and exception if the step backend is not supported. This was a deliberate API
         # decision to keep the CP size or flag out of the function.
         has_backend = check_has_backend_for_mask(attn_mask_type)
+        breakpoint()
         if cp_size > 1 and attn_mask_type == AttnMaskType.CAUSAL_MASK:
             has_backend &= check_has_backend_for_mask(AttnMaskType.CAUSAL_BOTTOM_RIGHT_MASK)
 
