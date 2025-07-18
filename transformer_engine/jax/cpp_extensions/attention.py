@@ -385,7 +385,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
         wkspace_aval = q_aval.update(
             shape=wkspace_info[0], dtype=te_dtype_to_jax_dtype(wkspace_info[1])
         )
-        #breakpoint()
+        breakpoint()
         return out_aval, softmax_aux_aval, rng_state_aval, wkspace_aval
 
     @staticmethod
@@ -446,7 +446,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
         else:
             window_size_left = config.window_size[0]
             window_size_right = config.window_size[1]
-        #breakpoint()
+        breakpoint()
         return ffi.ffi_lowering(FusedAttnFwdPrimitive.name)(
             ctx,
             q,
@@ -600,7 +600,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
         q_bdim, _, _, _, seed_bdim, *_ = batch_dims
 
         out_bdims = q_bdim, q_bdim, seed_bdim
-        #breakpoint()
+        breakpoint()
         return (
             FusedAttnFwdPrimitive.outer_primitive.bind(*batched_args, config=config),
             out_bdims,
@@ -658,7 +658,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
 
     @staticmethod
     def partition(config, mesh, arg_infos, result_infos):
-        #breakpoint()
+        breakpoint()
         out_sharding = result_infos[0].sharding
         softmax_aux_sharding = result_infos[1].sharding
         rng_state_sharding = seed_sharding = NamedSharding(
@@ -670,7 +670,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
         arg_shardings[-2] = arg_shardings[-4]
         arg_shardings = tuple(arg_shardings)
         out_shardings = (out_sharding, softmax_aux_sharding, rng_state_sharding)
-        #breakpoint()
+        breakpoint()
         impl = partial(FusedAttnFwdPrimitive.impl, config=config)
         return mesh, impl, out_shardings, arg_shardings
 
@@ -2285,7 +2285,7 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
         arg_shardings[4] = seed_sharding
         arg_shardings = tuple(arg_shardings)
         out_shardings = (out_sharding, softmax_aux_sharding, rng_state_sharding)
-        #breakpoint()
+        breakpoint()
 
         def fwd_impl(
             q,
