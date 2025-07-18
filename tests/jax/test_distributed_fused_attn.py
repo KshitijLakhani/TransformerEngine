@@ -282,7 +282,7 @@ DISTRIBUTED_CONTEXT_SELF_ATTN_DATA_SHAPES = [
     # Sequence lengths will be scaled by CP so that we don't run with tiny sizes.
     pytest.param([2, 128, 8, 128], id="2-128xCP-8-128"),
     pytest.param([4, 256, 16, 64], id="4-256xCP-16-64"),
-    pytest.param([2, 4, 16, 32], id="2-4xCP-16-32"), # only for testing striping
+    pytest.param([2, 16, 16, 32], id="2-16xCP-16-32"), # only for testing striping (to give 32 seqlen so 16)
 ]
 
 
