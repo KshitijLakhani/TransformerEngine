@@ -2306,7 +2306,7 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
                 raise ValueError("THD + ring attn only supports passing seqment_ids/pos")
 
             _not_used = jnp.zeros(0, dtype=v.dtype)
-            #breakpoint()
+            breakpoint()
             # Combine KV tensors if separate for better permute scheduling and performance.
             # Eventually XLA should perform this automatically.
             kv = helper.stack_kv(k, v)
@@ -2322,7 +2322,7 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
             batch, q_max_seqlen, head, _ = q.shape
             output = jnp.zeros(q.shape).astype(jnp.float32)
             softmax_aux = jnp.zeros((batch, q_max_seqlen, head, 1), dtype=jnp.float32)
-            #breakpoint()
+            breakpoint()
             # RNG shape should be the shared shape. This is unused for ring attention as we do not
             # support dropout currently.
             rng_state_shape = (seed.shape[0], *result_infos[2].shape[1:])
@@ -2330,18 +2330,18 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
 
             def scan_kv_block(idx, carry):
                 kv, kv_segment_ids, kv_segment_pos, output, softmax_aux = carry
-                #breakpoint()
+                breakpoint()
                 #jax.debug.breakpoint()
                 # TODO(rewang): To check whether we need special handle for the last idx
                 # Send KV block to next step so we can overlap compute.
                 kv_next = helper.permute_kv(kv, cp_perm)
                 kv_segment_ids_next = helper.permute_kv(kv_segment_ids, cp_perm)
                 kv_segment_pos_next = helper.permute_kv(kv_segment_pos, cp_perm)
-                #breakpoint()
+                breakpoint()
                 #jax.debug.breakpoint() # to examine the ids and pos for striding
 
                 def compute(config):
-                    #breakpoint()
+                    breakpoint()
                     #jax.debug.breakpoint()
                     return FusedAttnFwdPrimitive.impl(
                         q,
@@ -2397,7 +2397,7 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
                     output_per_step,
                     softmax_aux_per_step,
                 )
-                #breakpoint()
+                breakpoint()
                 #jax.debug.breakpoint()
                 return (kv_next, kv_segment_ids_next, kv_segment_pos_next, output, softmax_aux)
 
