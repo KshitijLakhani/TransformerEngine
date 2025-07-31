@@ -610,7 +610,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
     def infer_sharding_from_operands(config, mesh, arg_infos, result_infos):
         del result_infos
         q_spec = get_padded_spec(arg_infos[0])
-
+        breakpoint()
         # when supported softmax_aux shape is (b, s, h, 1) for thd on cudnn 9.6+
         # otherwise softmax_aux shape is (b, h, s, 1) or (b, h, s, max_segments)
         is_packed_softmax = get_cudnn_version() >= (9, 6, 0) and config.qkv_layout.is_thd()
@@ -1165,7 +1165,7 @@ def reorder_causal_dual_chunk_swap(tensor, cp_size: int, seq_dim: int, to_contig
     # [B, S, H, D]: [B, 2*cp_size, S/2*cp_size, H, D]
     # [S, B, H, D]: [2*cp_size, S/2*cp_size, B, H, D]
     combined = jnp.stack(parts, axis=seq_dim)
-    #jax.debug.breakpoint()
+    
     return combined.reshape(ori_tensor_shape)
 
 
@@ -1268,7 +1268,6 @@ class _FusedAttnCPWithAllGatherHelper:
             if self.config.context_parallel_load_balanced:
                 cp_size = get_mesh_axis_size(self.config.cp_axis, self.mesh)
                 x = reorder_causal_dual_chunk_swap(x, cp_size, 1, to_contiguous=True)
-            # jax.debug.breakpoint()
             return x
         
         if self.config.qkv_layout.is_kvpacked():
@@ -1317,7 +1316,7 @@ class _FusedAttnCPWithAllGatherHelper:
            cp_rank 2: [384, 768]
            cp_rank 3: [512, 640]
         """
-        #jax.debug.breakpoint()
+        
         if self.config.context_parallel_load_balanced:
             kv_seq_this_rank = [
                 (cp_rank + 1) * kv_seqlen_per_subrank,
@@ -1328,7 +1327,7 @@ class _FusedAttnCPWithAllGatherHelper:
                 (cp_rank * 2 + 1) * kv_seqlen_per_subrank,
                 (cp_rank * 2 + 2) * kv_seqlen_per_subrank,
             ]
-        #jax.debug.breakpoint()
+        
         #jax.debug.print(f"kv_seqlen_per_subrank: {kv_seqlen_per_subrank},kv_seq_this_rank: {kv_seq_this_rank}")
         return kv_seq_this_rank
 
@@ -1389,7 +1388,7 @@ class FusedAttnCPWithAllGatherFwdPrimitive(FusedAttnFwdPrimitive):
         arg_shardings = [arg_i.sharding for arg_i in arg_infos]
         arg_shardings[4] = seed_sharding
         arg_shardings = tuple(arg_shardings)
-        #jax.debug.breakpoint()
+        
         out_shardings = (out_sharding, softmax_aux_sharding, rng_state_sharding)
 
         def impl(
@@ -1437,7 +1436,6 @@ class FusedAttnCPWithAllGatherFwdPrimitive(FusedAttnFwdPrimitive):
                     q_seqlen_for_step = q_seqlen / (cp_size * 2)
                     num_kv_chunks = kv_max_seqlen // kv_seqlens_for_rank[sub_idx]
                     kv_seqlen_for_step = (kv_seqlen / (cp_size * 2)) * num_kv_chunks
-                    #jax.debug.breakpoint() # inspect the segment pos etc
                     output, softmax_aux, rng_state = FusedAttnFwdPrimitive.impl(
                         q_split[sub_idx],
                         k_unmasked,
@@ -1465,7 +1463,7 @@ class FusedAttnCPWithAllGatherFwdPrimitive(FusedAttnFwdPrimitive):
             k_ag, v_ag = helper.all_gather_kv(k, v)
             jax.debug.print("k_ag= {}", k_ag)
             jax.debug.print("v_ag= {}", v_ag)
-            #jax.debug.breakpoint()
+            
             functions = [
                 partial(_cross_attn, idx, q, k_ag, v_ag, bias, q_seqlen, kv_seqlen, seed)
                 for idx in range(cp_size)
@@ -1496,7 +1494,7 @@ class FusedAttnCPWithAllGatherBwdPrimitive(FusedAttnBwdPrimitive):
         ), "Sliding window attention is not supported when context parallelism is enabled"
         if not is_context_parallel:
             return FusedAttnBwdPrimitive.partition(config, mesh, arg_infos, result_infos)
-        #jax.debug.breakpoint()
+        
         # Ensure we can support this configuration with context parallelism.
         helper = _FusedAttnCPWithAllGatherHelper(mesh, config)
         helper.check_supported()
@@ -1564,7 +1562,7 @@ class FusedAttnCPWithAllGatherBwdPrimitive(FusedAttnBwdPrimitive):
                 kv_seqlens_for_rank = helper.kv_seqlens_for_rank(
                     idx, kv_max_seqlen, kv_seqlen_per_subrank
                 )
-                #jax.debug.breakpoint()
+                
                 results = []
                 for sub_idx in range(2):
                     if config.attn_mask_type == AttnMaskType.NO_MASK:
@@ -1611,7 +1609,7 @@ class FusedAttnCPWithAllGatherBwdPrimitive(FusedAttnBwdPrimitive):
             k_ag, v_ag = helper.all_gather_kv(k, v)
             jax.debug.print("k_ag= {}", k_ag)
             jax.debug.print("v_ag= {}", v_ag)
-            #jax.debug.breakpoint()
+            
 
             functions = [
                 partial(
@@ -1803,7 +1801,7 @@ class FusedRingAttnFwdPrimitive(FusedAttnFwdPrimitive):
         arg_shardings[4] = seed_sharding
         arg_shardings = tuple(arg_shardings)
         out_shardings = (out_sharding, softmax_aux_sharding, rng_state_sharding)
-        #jax.debug.breakpoint()
+        
 
         def ring_attn_fwd_impl(
             q,
@@ -2302,11 +2300,13 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
             q_segment_pos,
             kv_segment_pos,
         ):
+            #jax.debug.print(f"q_seqlen: {q_seqlen}, q_seq_offsets:{q_seq_offsets}, q_segment_ids: {q_segment_ids}, q_segment_pos: {q_segment_pos}")
+            
             if q_segment_ids.size == 0 or kv_segment_ids.size == 0:
                 raise ValueError("THD + ring attn only supports passing seqment_ids/pos")
 
             _not_used = jnp.zeros(0, dtype=v.dtype)
-            breakpoint()
+            #breakpoint()
             # Combine KV tensors if separate for better permute scheduling and performance.
             # Eventually XLA should perform this automatically.
             kv = helper.stack_kv(k, v)
@@ -2322,7 +2322,7 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
             batch, q_max_seqlen, head, _ = q.shape
             output = jnp.zeros(q.shape).astype(jnp.float32)
             softmax_aux = jnp.zeros((batch, q_max_seqlen, head, 1), dtype=jnp.float32)
-            breakpoint()
+            #breakpoint()
             # RNG shape should be the shared shape. This is unused for ring attention as we do not
             # support dropout currently.
             rng_state_shape = (seed.shape[0], *result_infos[2].shape[1:])
@@ -2330,19 +2330,15 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
 
             def scan_kv_block(idx, carry):
                 kv, kv_segment_ids, kv_segment_pos, output, softmax_aux = carry
-                breakpoint()
-                #jax.debug.breakpoint()
+                #breakpoint()
+                
                 # TODO(rewang): To check whether we need special handle for the last idx
                 # Send KV block to next step so we can overlap compute.
                 kv_next = helper.permute_kv(kv, cp_perm)
                 kv_segment_ids_next = helper.permute_kv(kv_segment_ids, cp_perm)
                 kv_segment_pos_next = helper.permute_kv(kv_segment_pos, cp_perm)
-                breakpoint()
-                #jax.debug.breakpoint() # to examine the ids and pos for striding
 
-                def compute(config):
-                    breakpoint()
-                    #jax.debug.breakpoint()
+                def compute(config):  
                     return FusedAttnFwdPrimitive.impl(
                         q,
                         kv,
@@ -2397,8 +2393,8 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
                     output_per_step,
                     softmax_aux_per_step,
                 )
-                breakpoint()
-                #jax.debug.breakpoint()
+                #breakpoint()
+                
                 return (kv_next, kv_segment_ids_next, kv_segment_pos_next, output, softmax_aux)
 
             carry = (kv, kv_segment_ids, kv_segment_pos, output, softmax_aux)
@@ -2666,7 +2662,7 @@ def fused_attn_fwd(
                 primitive = FusedRingAttnStripedFwdPrimitive.outer_primitive
             else:
                 primitive = FusedRingAttnFwdPrimitive.outer_primitive
-
+    breakpoint()
     seq_desc_flatten, _ = jax.tree.flatten(sequence_descriptor)
     output, softmax_aux, rng_state = primitive.bind(
         *qkv_for_primitive,

@@ -862,6 +862,13 @@ void nvte_fused_attn_fwd(const NVTETensor Q, const NVTETensor K, const NVTETenso
   Tensor *output_O = convertNVTETensorCheck(O);
   Tensor *wkspace = convertNVTETensor(workspace);
 
+  // KL code
+  std::cout << " 0: " << input_cu_seqlens_q->data.shape[0]
+            << " 1: " << input_cu_seqlens_q->data.shape[1]
+            << " 2: " << input_cu_seqlens_q->data.shape[2]
+            << " 3: " << input_cu_seqlens_q->data.shape[3]
+            << " input_cu_seqlens_q->data.shape.size() " << input_cu_seqlens_q->data.shape.size()
+            << std::endl;
   auto ndim = input_Q->data.shape.size();
   auto ndim_kv = input_K->data.shape.size();
   size_t b = input_cu_seqlens_q->data.shape[0] - 1;

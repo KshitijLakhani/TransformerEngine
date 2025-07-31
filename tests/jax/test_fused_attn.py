@@ -162,7 +162,7 @@ def make_mask(
     inv_mask = make_attention_mask(
         segment_ids_q, segment_ids_kv, lambda x, y: (jnp.logical_and(jnp.equal(x, y), x != 0))
     )
-    jax.debug.breakpoint()
+    #jax.debug.breakpoint()
 
     if segment_pos_q is None:
         segment_pos_q = jnp.broadcast_to(
@@ -203,11 +203,11 @@ def get_seqlens_and_offsets(segment_ids):
         ).squeeze(-1)
 
     offsets = _find_offsets(segment_ids)
-    jax.debug.breakpoint()
+    #jax.debug.breakpoint()
     offsets = jnp.insert(offsets, offsets.shape[-1], values=-1, axis=-1)
     seqlens = jnp.insert(seqlens, seqlens.shape[-1], values=0, axis=-1)
     seqlens = jnp.where(seqlens, seqlens, -1)
-    jax.debug.breakpoint()
+    #jax.debug.breakpoint()
     return seqlens, offsets
 
 
@@ -413,11 +413,12 @@ class FusedAttnRunner:
 
         key = jax.random.PRNGKey(0)
         q_key, k_key, v_key, bias_key, dropout_key = jax.random.split(key, 5)
-
         q_shape = (self.batch_size, self.max_seqlen_q, self.num_heads_q, self.head_dim_qk)
         k_shape = (self.batch_size, self.max_seqlen_kv, self.num_heads_kv, self.head_dim_qk)
         v_shape = (self.batch_size, self.max_seqlen_kv, self.num_heads_kv, self.head_dim_v)
-
+        print(f"q_shape: {q_shape}")
+        print(f"k_shape: {k_shape}")
+        print(f"v_shape: {v_shape}")
         if self.attn_bias_type == AttnBiasType.NO_BIAS:
             bias_shape = None
         elif self.bias_shape == BiasShape._1HSS:
@@ -435,20 +436,35 @@ class FusedAttnRunner:
             bias_shape = (1, 1, self.max_seqlen_q, self.max_seqlen_kv)
         else:
             pytest.fail(f"PyTest attempted to use an unrecognized bias_layout = {self.bias_shape}!")
-        # self.q = jax.random.uniform(q_key, q_shape, self.dtype, -1.0)
-        # self.k = jax.random.uniform(k_key, k_shape, self.dtype, -1.0)
-        # self.v = jax.random.uniform(v_key, v_shape, self.dtype, -1.0)
-        q_np = np.zeros(q_shape, self.dtype)
-        k_np = np.zeros(k_shape, self.dtype)
-        # Set seq 0, token 12 and head 0
-        token_numbers = range(self.max_seqlen_q)
-        for token_idx in token_numbers:
-            q_np[0][token_idx][0] = np.ones(self.head_dim_qk, self.dtype) * token_idx
-        k_np[0][15][0] = np.ones(self.head_dim_qk, self.dtype)*np.sqrt(self.head_dim_qk)
-        v_np = np.ones(v_shape, self.dtype)
-        self.q = jnp.array(q_np)
-        self.k = jnp.array(k_np)
-        self.v = jnp.array(v_np)
+        self.q = jax.random.uniform(q_key, q_shape, self.dtype, -1.0)
+        self.k = jax.random.uniform(k_key, k_shape, self.dtype, -1.0)
+        self.v = jax.random.uniform(v_key, v_shape, self.dtype, -1.0)
+        # KL code
+        # q_np = np.zeros(q_shape, self.dtype)
+        # k_np = np.zeros(k_shape, self.dtype)
+        # # Set seq 0, token 12 and head 0
+        # token_numbers = range(self.max_seqlen_q)
+        # for token_idx in token_numbers:
+        #     q_np[0][token_idx][0] = np.ones(self.head_dim_qk, self.dtype) * token_idx
+        # k_np[0][15][0] = np.ones(self.head_dim_qk, self.dtype)*np.sqrt(self.head_dim_qk)
+        # v_np = np.ones(v_shape, self.dtype)
+        # self.q = jnp.array(q_np)
+        # self.k = jnp.array(k_np)
+        # self.v = jnp.array(v_np)
+
+        #KL code - 2
+        # q_np = np.zeros(q_shape, self.dtype)
+        # k_np = np.zeros(k_shape, self.dtype)
+        # token_numbers_q = range(self.max_seqlen_q)
+        # token_numbers_k = range(self.max_seqlen_k)
+        # for token_idx in token_numbers_q:
+        #     q_np[0][token_idx][0] = np.ones(self.head_dim_qk, self.dtype) * token_idx
+        # for token_idx in token_numbers_k:
+        #     k_np[0][token_idx][0] = np.ones(self.head_dim_qk, self.dtype) * np.sqrt(self.head_dim_qk)
+        # v_np = np.ones(v_shape, self.dtype)
+        # self.q = jnp.array(q_np)
+        # self.k = jnp.array(k_np)
+        # self.v = jnp.array(v_np)
         breakpoint()
 
         if self.attn_bias_type != AttnBiasType.NO_BIAS:
@@ -528,19 +544,22 @@ class FusedAttnRunner:
             return segment_ids, segment_pos, segment_pad
 
         if self.qkv_layout.is_thd():
+            # KL code
             self.num_segments_per_seq = 3
+            #self.num_segments_per_seq = 2
             self.segment_ids_q, self.segment_pos_q, self.pad_q = generate_random_segment_ids(
                 self.batch_size, self.max_seqlen_q, self.num_segments_per_seq, seed=42
             )
+            # KL code
             # Insert custom segment ids and pos and q to replicate test behavior
-            self.segment_ids_q = np.array([[1, 2, 2, 2, 2, 2, 2, 0, 0, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                                           [1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], dtype=np.int32)
+            # self.segment_ids_q = np.array([[1, 2, 2, 2, 2, 2, 2, 0, 0, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            #                                [1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], dtype=np.int32)
             
-            self.segment_pos_q = np.array([[0, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                                           [0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 2, 3, 4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], dtype=np.int32)
+            # self.segment_pos_q = np.array([[0, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            #                                [0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 2, 3, 4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], dtype=np.int32)
             
-            self.pad_q = np.array([[0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-                                   [0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]], dtype=np.int32)
+            # self.pad_q = np.array([[0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            #                        [0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]], dtype=np.int32)
             breakpoint()
             self.seqlens_q, self.offsets_q = get_seqlens_and_offsets(self.segment_ids_q)
             # TODO(rewang): record only self attention and find the reason of cross attention
@@ -995,6 +1014,17 @@ class FusedAttnRunner:
             64,
             jnp.bfloat16,
             id="2-2048-1024-12-12-64-64-BF16-CROSS",
+        ),
+        pytest.param(
+            1,
+            8,
+            64,
+            12,
+            12,
+            64,
+            64,
+            jnp.bfloat16,
+            id="1-8-64-12-12-64-64-BF16-CROSS",
         ),
         pytest.param(
             2, 2048, 2048, 12, 6, 64, 64, jnp.bfloat16, id="2-2048-2048-12-6-64-64-BF16-GQA"
