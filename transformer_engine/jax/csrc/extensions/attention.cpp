@@ -161,7 +161,12 @@ pybind11::tuple GetFusedAttnForwardWorkspaceSizes(
     // For cuDNN < 9.3.0, it requires to run all possible seqlens to address act_seqlen = 0
     min_num_segments = input_batch * max_segments_per_seq;
   }
-  for (auto num_segments = min_num_segments; num_segments <= max_num_segments; ++num_segments) {
+  std::cout << "input_batch: " << input_batch << " max_segments_per_seq: " << max_segments_per_seq
+            << " is_ragged: " << is_ragged << " max_num_segments: " << max_num_segments
+            << " min_num_segments: "
+            << min_num_segments << std::endl;
+
+      for (auto num_segments = min_num_segments; num_segments <= max_num_segments; ++num_segments) {
     // the last one is the largest which will be the returned workspace size
     auto q_cu_seqlens_tensor =
         TensorWrapper(nullptr, std::vector<size_t>{num_segments + 1}, DType::kInt32);
@@ -245,6 +250,9 @@ static void FusedAttnForwardImpl(
 
   /* Input tensors */
   auto bias_tensor = TensorWrapper(bias, bias_shape, dtype);
+  std::cout << "is_ragged: " << is_ragged << std::endl;
+  std::cout << "input_batch: " << input_batch << "q_max_seqlen: " << q_max_seqlen
+            << "attn_heads: " << attn_heads << "v_head_dim: " << v_head_dim << std::endl;
 
   if (is_ragged) {
     auto output_size = input_batch * q_max_seqlen * attn_heads * v_head_dim;
@@ -266,6 +274,7 @@ static void FusedAttnForwardImpl(
       is_training, static_cast<NVTEDType>(dtype), static_cast<NVTEDType>(dtype), qkv_layout,
       bias_type, mask_type, dropout_probability, attn_heads, num_gqa_groups, q_max_seqlen,
       kv_max_seqlen, qk_head_dim, v_head_dim, window_size_left, window_size_right);
+  std::cout << "backend" << backend << std::endl;
   nvte_populate_rng_state_async(rng_state, seed, q_max_seqlen, kv_max_seqlen, backend, stream);
 
   /* Auxiliary tensors (to be propagated to the backward pass later) */
@@ -277,6 +286,7 @@ static void FusedAttnForwardImpl(
 
   /* Call the underlying NVTE API */
   auto dummy_page_table_tensor = TensorWrapper(nullptr, std::vector<size_t>{1}, DType::kInt32);
+  std::cout << "layout_group" << layout_group << std::endl;
   if (layout_group == NVTE_QKV_Layout_Group::NVTE_3HD) {
     auto qkv_shape = std::vector<size_t>{input_batch * q_max_seqlen, 3, attn_heads, qk_head_dim};
     auto qkv_tensor = TensorWrapper(q, qkv_shape, dtype);
