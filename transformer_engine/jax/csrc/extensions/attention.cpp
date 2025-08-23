@@ -165,12 +165,13 @@ pybind11::tuple GetFusedAttnForwardWorkspaceSizes(
     // For cuDNN < 9.3.0, it requires to run all possible seqlens to address act_seqlen = 0
     min_num_segments = input_batch * max_segments_per_seq;
   }
-  std::cout << "input_batch: " << input_batch << " max_segments_per_seq: " << max_segments_per_seq
+  /*std::cout << "GetFusedAttnForwardWorkspaceSizes" << std::endl;
+  /std::cout << "input_batch: " << input_batch << " max_segments_per_seq: " << max_segments_per_seq
             << " is_ragged: " << is_ragged << " max_num_segments: " << max_num_segments
             << " min_num_segments: "
-            << min_num_segments << std::endl;
+            << min_num_segments << std::endl;*/
 
-      for (auto num_segments = min_num_segments; num_segments <= max_num_segments; ++num_segments) {
+  for (auto num_segments = min_num_segments; num_segments <= max_num_segments; ++num_segments) {
     // the last one is the largest which will be the returned workspace size
     auto q_cu_seqlens_tensor =
         TensorWrapper(nullptr, std::vector<size_t>{num_segments + 1}, DType::kInt32);
@@ -252,10 +253,15 @@ static void FusedAttnForwardImpl(
     float scaling_factor, float dropout_probability, NVTE_Bias_Type bias_type,
     NVTE_Mask_Type mask_type, NVTE_QKV_Layout qkv_layout, DType dtype, DType wkspace_dtype,
     bool is_training, bool deterministic, int64_t window_size_left, int64_t window_size_right) {
+  /*auto ptr = (int32_t *)q_cu_seqlens;
+  for (int32_t idx = 0; idx < num_segments+1; ++idx) {
+    std::cout << "q_cu_seqlens[" << idx << "]: " << ptr[idx] << std::endl;
+  }*/
   FUSED_ATTN_IMPL_COMMON_BLOCK;
 
   /* Input tensors */
   auto bias_tensor = TensorWrapper(bias, bias_shape, dtype);
+  std::cout << "FusedAttnForwardImpl" << std::endl;
   std::cout << "is_ragged: " << is_ragged << std::endl;
   std::cout << "input_batch: " << input_batch << "q_max_seqlen: " << q_max_seqlen
             << "attn_heads: " << attn_heads << "v_head_dim: " << v_head_dim << std::endl;

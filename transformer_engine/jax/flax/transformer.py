@@ -595,6 +595,7 @@ class DotProductAttention(nn.Module):  # pylint: disable=too-few-public-methods
         attn_mask_type = canonicalize_attn_mask_type(self.attn_mask_type)
         qkv_layout = QKVLayout[self.qkv_layout.upper()]
         del self.attn_bias_type, self.attn_mask_type, self.qkv_layout
+        breakpoint()
 
         if attn_bias_type == AttnBiasType.NO_BIAS:
             assert bias is None
@@ -1121,7 +1122,7 @@ class MultiHeadAttention(nn.Module):  # pylint: disable=too-few-public-methods
         outputs: jax.numpy.ndarray
             Output tensors.
         """
-
+        breakpoint()
         assert (
             inputs_q.dtype == inputs_kv.dtype
         ), f"q.dtype = {inputs_q.dtype}, kv.dtype = {inputs_kv.dtype}"
@@ -1424,6 +1425,7 @@ class MultiHeadAttention(nn.Module):  # pylint: disable=too-few-public-methods
             dpa_args = [query, key, value]
 
         scale_factor = 1.0 / sqrt(self.head_dim) if self.scale_attn_logits else 1.0
+        breakpoint()
         x = DotProductAttention(
             head_dim=self.head_dim,
             num_attention_heads=self.num_attention_heads,
@@ -1899,6 +1901,7 @@ class TransformerLayer(nn.Module):  # pylint: disable=too-few-public-methods
                 attn_bias = rel_emb(l, l, False)
 
         assert inputs.ndim == 3
+        breakpoint()
 
         # Make name be the exactly same as T5X, since names would affect
         # RNGKey during init and apply. Myabe no need in the feature.

@@ -132,6 +132,9 @@ struct FADescriptor_v1 {
   }
 };
 
+/*template <typename T>
+__global__ void print_tensor_elements(const T *const data, const size_t rows, const size_t cols);*/
+
 __global__ void cu_seqlens_to_offsets(int64_t b, int64_t h, int64_t d, int32_t *cu_seqlens_q,
                                       int32_t *actual_seqlens_q, int32_t *qkv_ragged_offset,
                                       int32_t *o_ragged_offset);

@@ -831,6 +831,7 @@ void nvte_fused_attn_bwd_kvpacked(
     NVTE_ERROR("Invalid combination of data type and sequence length for fused attention. \n");
   }
 }
+
 // NVTE fused attention FWD with separate Q, K and V
 void nvte_fused_attn_fwd(const NVTETensor Q, const NVTETensor K, const NVTETensor V,
                          const NVTETensor Bias, const NVTETensor SoftmaxOffset, NVTETensor S,
@@ -862,13 +863,6 @@ void nvte_fused_attn_fwd(const NVTETensor Q, const NVTETensor K, const NVTETenso
   Tensor *output_O = convertNVTETensorCheck(O);
   Tensor *wkspace = convertNVTETensor(workspace);
 
-  // KL code
-  std::cout << " 0: " << input_cu_seqlens_q->data.shape[0]
-            << " 1: " << input_cu_seqlens_q->data.shape[1]
-            << " 2: " << input_cu_seqlens_q->data.shape[2]
-            << " 3: " << input_cu_seqlens_q->data.shape[3]
-            << " input_cu_seqlens_q->data.shape.size() " << input_cu_seqlens_q->data.shape.size()
-            << std::endl;
   auto ndim = input_Q->data.shape.size();
   auto ndim_kv = input_K->data.shape.size();
   size_t b = input_cu_seqlens_q->data.shape[0] - 1;
@@ -898,8 +892,34 @@ void nvte_fused_attn_fwd(const NVTETensor Q, const NVTETensor K, const NVTETenso
   if (input_page_table_v->data.dptr != nullptr) {
     max_pages_per_seq_v = input_page_table_v->data.shape[1];
   }
-  std::cout << "nvte_fused_attn_fwd()" << " ndim:" << ndim << " ndim_kv:" << ndim_kv << " b:" << b
-            << " t_q:" << t_q << " t_kv:" << t_kv << std::endl;
+  bool debug_print = true;
+  if (debug_print) 
+  {
+    std::cout << "nvte_fused_attn_fwd()" << " ndim:" << ndim << " ndim_kv:" << ndim_kv << " b:" << b
+              << " t_q:" << t_q << " t_kv:" << t_kv << std::endl;
+    // print shapes for input_cu_seqlens_q
+    std::cout << "Shape for input_cu_seqlens_q: ";
+    for (auto idx = 0;idx < input_cu_seqlens_q->data.shape.size();++idx) {
+      std::cout << input_cu_seqlens_q->data.shape[idx] << ", ";
+    }
+    std::cout << std::endl;
+    std::cout << "Shape for input_cu_seqlens_kv: ";
+    for (auto idx = 0;idx < input_cu_seqlens_kv->data.shape.size();++idx) {
+      std::cout << input_cu_seqlens_kv->data.shape[idx] << ", ";
+    }
+    std::cout << std::endl;
+    std::cout << "Shape for input_cu_seqlens_q_padded: ";
+    for (auto idx = 0;idx < input_cu_seqlens_q_padded->data.shape.size();++idx) {
+      std::cout << input_cu_seqlens_q_padded->data.shape[idx] << ", ";
+    }
+    std::cout << std::endl;
+    std::cout << "Shape for input_cu_seqlens_kv_padded: ";
+    for (auto idx = 0;idx < input_cu_seqlens_kv_padded->data.shape.size();++idx) {
+      std::cout << input_cu_seqlens_kv_padded->data.shape[idx] << ", ";
+    }
+    std::cout <<std::endl;
+  }
+
   NVTE_QKV_Layout_Group layout_group = nvte_get_qkv_layout_group(qkv_layout);
   if (layout_group == NVTE_QKV_Layout_Group::NVTE_Paged_KV_HD_HD_HD) {
     NVTE_QKV_Format kv_format = nvte_get_kv_format(qkv_layout);

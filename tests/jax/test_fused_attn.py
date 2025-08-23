@@ -76,7 +76,7 @@ def general_dot_product_attention(
     """
     query, key, value, bias = promote_dtype(query, key, value, bias, dtype=dtype)
     dtype = query.dtype
-
+    breakpoint()
     b, s_q, h_q, d = query.shape
     _, s_kv, h_kv, _ = key.shape
     assert (h_q % h_kv == 0) and (h_q >= h_kv)
@@ -94,6 +94,7 @@ def general_dot_product_attention(
         logits = logits.reshape((b, h_kv, num_groups, s_q, s_kv))
 
     if mask is not None:
+        breakpoint()
         if mask.ndim != logits.ndim:
             mask = jnp.expand_dims(mask, axis=-3)
         logits = jnp.where(mask, jnp.finfo(dtype).min, logits)
@@ -105,7 +106,7 @@ def general_dot_product_attention(
         keep = jax.random.bernoulli(dropout_rng, keep_prob, softmax_out.shape)
         multiplier = keep.astype(dtype) / jnp.asarray(keep_prob, dtype=dtype)
         softmax_out = softmax_out * multiplier
-
+    breakpoint()
     context = jnp.einsum("...hgqk,...khd->...qhgd", softmax_out, value)
     context_shape = query.shape[:-1] + (value.shape[-1],)
     context = jnp.reshape(context, context_shape)
@@ -135,6 +136,22 @@ def make_causal_mask(
     inv_causal_mask = make_attention_mask(segment_pos_q, segment_pos_kv, jnp.greater_equal)
     return inv_causal_mask
 
+@partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
+def make_mask_hardcoded(batch_size, total_tokens_q, total_tokens_kv, num_seg, cp_size) -> Array:
+    assert total_tokens_q%num_seg==0, "total_tokens must be a multiple of num_seg"
+    assert total_tokens_q%cp_size==0, "total_tokens must be a multiple of cp_size for this test case"
+    assert total_tokens_q==total_tokens_kv, "total_tokens_q must be equal to total_tokens_kv"
+    num_tokens_per_seg_q = total_tokens_q/num_seg
+    # Calculate the num tokens in original sequence for mask
+    num_tokens_per_seg_q_orig = total_tokens_q/cp_size
+    breakpoint()
+    mask = jnp.ones((batch_size, 1, total_tokens_q, total_tokens_kv),  dtype=jnp.bool)
+    tri_mask = ~jnp.tri(int(num_tokens_per_seg_q_orig), dtype=jnp.bool)
+    for seg_idx in range(num_seg):
+        start_idx = int(seg_idx*num_tokens_per_seg_q_orig)
+        end_idx = int((seg_idx+1)*num_tokens_per_seg_q_orig)
+        mask = mask.at[:, :, start_idx:end_idx, start_idx:end_idx].set(tri_mask)
+    return mask
 
 @partial(jax.jit, static_argnums=(4, 5))
 def make_mask(
@@ -163,6 +180,7 @@ def make_mask(
         segment_ids_q, segment_ids_kv, lambda x, y: (jnp.logical_and(jnp.equal(x, y), x != 0))
     )
     #jax.debug.breakpoint()
+    #breakpoint()
 
     if segment_pos_q is None:
         segment_pos_q = jnp.broadcast_to(
@@ -456,15 +474,21 @@ class FusedAttnRunner:
         # q_np = np.zeros(q_shape, self.dtype)
         # k_np = np.zeros(k_shape, self.dtype)
         # token_numbers_q = range(self.max_seqlen_q)
-        # token_numbers_k = range(self.max_seqlen_k)
+        # token_numbers_k = range(self.max_seqlen_kv)
         # for token_idx in token_numbers_q:
         #     q_np[0][token_idx][0] = np.ones(self.head_dim_qk, self.dtype) * token_idx
         # for token_idx in token_numbers_k:
         #     k_np[0][token_idx][0] = np.ones(self.head_dim_qk, self.dtype) * np.sqrt(self.head_dim_qk)
         # v_np = np.ones(v_shape, self.dtype)
+        # # Set cols at multiples
+        # v_np[0,::4, 0, :] = np.arange(v_np.shape[3])
         # self.q = jnp.array(q_np)
         # self.k = jnp.array(k_np)
         # self.v = jnp.array(v_np)
+        # print(f"self.q: {self.q}, \n self.k: {self.k}, \n")
+        # # import sys
+        # # with np.printoptions(threshold=sys.maxsize):
+        # #     print(f"self.v: {self.v}")
         breakpoint()
 
         if self.attn_bias_type != AttnBiasType.NO_BIAS:
@@ -495,6 +519,36 @@ class FusedAttnRunner:
             valid_len = max_seqlen - pad_len
             tokens = jnp.concatenate([jnp.ones((bs, valid_len)), jnp.zeros((bs, pad_len))], axis=-1)
             return tokens, jnp.logical_not(tokens)
+        
+        def gen_custom_tokens_segment_ids_1(batch_size, total_tokens, num_seg):
+            # Equally dist the tokens across segments
+            assert total_tokens%num_seg==0, "total_tokens must be a multiple of num_seg"
+            num_tokens_per_seg = total_tokens/num_seg
+            print(f"batch_size: {batch_size}, total_tokens: {total_tokens}, num_seg: {num_seg}, num_tokens_per_seg: {num_tokens_per_seg}")
+
+            segment_ids = np.zeros((batch_size, total_tokens), dtype=np.int32)
+            segment_pos = np.zeros((batch_size, total_tokens), dtype=np.int32)
+            pad = np.zeros((batch_size, total_tokens), dtype=np.int32)
+            for seg_idx in range(num_seg):
+                start_idx = int(seg_idx*num_tokens_per_seg)
+                end_idx = int((seg_idx+1)*num_tokens_per_seg)
+                #print(f"start_idx: {start_idx}, end_idx: {end_idx}")
+                segment_ids[:, start_idx:end_idx] = seg_idx+1
+                segment_pos[:, start_idx:end_idx] = range(int(num_tokens_per_seg))
+            return segment_ids, segment_pos, pad
+        def gen_custom_tokens_segment_ids_2(batch_size, total_tokens, num_seg, cp_size, is_q):
+            assert total_tokens%num_seg==0, "total_tokens must be a multiple of num_seg"
+            num_tokens_per_seg = total_tokens/num_seg
+            print(f"batch_size: {batch_size}, total_tokens: {total_tokens}, num_seg: {num_seg}, num_tokens_per_seg: {num_tokens_per_seg}")
+            if is_q: # for q
+                segment_ids = np.zeros((batch_size, total_tokens), dtype=np.int32)
+                segment_pos = np.zeros((batch_size, total_tokens), dtype=np.int32)
+                pad = np.zeros((batch_size, total_tokens), dtype=np.int32)
+                segment_ids[:, :] = range(1, int(total_tokens+1))
+            else: # for kv
+                segment_ids, segment_pos, pad = gen_custom_tokens_segment_ids_1(batch_size=batch_size, total_tokens=total_tokens, num_seg=cp_size)
+            return segment_ids, segment_pos, pad
+
 
         def generate_random_segment_ids(
             batch_size,
@@ -545,11 +599,19 @@ class FusedAttnRunner:
 
         if self.qkv_layout.is_thd():
             # KL code
-            self.num_segments_per_seq = 3
-            #self.num_segments_per_seq = 2
-            self.segment_ids_q, self.segment_pos_q, self.pad_q = generate_random_segment_ids(
-                self.batch_size, self.max_seqlen_q, self.num_segments_per_seq, seed=42
-            )
+            is_test_mode = True
+            is_thd_regular = True
+            if is_test_mode and is_thd_regular:
+                self.num_segments_per_seq = 8
+            elif is_test_mode and not is_thd_regular:
+                self.num_segments_per_seq = self.max_seqlen_q
+            else:
+                self.num_segments_per_seq = 2
+            print(f"self.num_segments_per_seq: {self.num_segments_per_seq}")
+            if not is_test_mode:
+                self.segment_ids_q, self.segment_pos_q, self.pad_q = generate_random_segment_ids(
+                    self.batch_size, self.max_seqlen_q, self.num_segments_per_seq, seed=42
+                )
             # KL code
             # Insert custom segment ids and pos and q to replicate test behavior
             # self.segment_ids_q = np.array([[1, 2, 2, 2, 2, 2, 2, 0, 0, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -560,6 +622,21 @@ class FusedAttnRunner:
             
             # self.pad_q = np.array([[0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             #                        [0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]], dtype=np.int32)
+            # KL code 2
+            # Insert custom segment ids and pos and q to replicate test behavior
+            # self.segment_ids_q = np.array([[1, 2, 3, 4, 5, 6, 7, 8],
+            #                                [1, 2, 3, 4, 5, 6, 7, 8]], dtype=np.int32)
+            
+            # self.segment_pos_q = np.array([[0, 0, 0, 0, 0, 0, 0, 0,],
+            #                                [0, 0, 0, 0, 0, 0, 0, 0,]], dtype=np.int32)
+            
+            # self.pad_q = np.array([[0, 0, 0, 0, 0, 0, 0, 0],
+            #                        [0, 0, 0, 0, 0, 0, 0, 0]], dtype=np.int32)
+            if is_test_mode and is_thd_regular:
+                self.segment_ids_q, self.segment_pos_q, self.pad_q = gen_custom_tokens_segment_ids_1(batch_size=self.batch_size, total_tokens=self.max_seqlen_q, num_seg=self.num_segments_per_seq)
+            if is_test_mode and not is_thd_regular:
+                test_cp_size = 8
+                self.segment_ids_q, self.segment_pos_q, self.pad_q = gen_custom_tokens_segment_ids_2(batch_size=self.batch_size, total_tokens=self.max_seqlen_q, num_seg=self.num_segments_per_seq, cp_size=test_cp_size, is_q=True)
             breakpoint()
             self.seqlens_q, self.offsets_q = get_seqlens_and_offsets(self.segment_ids_q)
             # TODO(rewang): record only self attention and find the reason of cross attention
@@ -577,6 +654,14 @@ class FusedAttnRunner:
                     seed=2024,
                     min_segment_len=min_segment_len,
                 )
+            # self.segment_ids_kv = np.array([[1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0],
+            #                                [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0]], dtype=np.int32)
+            
+            # self.segment_pos_kv = np.array([[0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 0, 0, 0, 0, 0, 0, 0],
+            #                                [0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 0, 0, 0, 0, 0, 0, 0]], dtype=np.int32)
+            
+            # self.pad_kv = np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1],
+            #                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]], dtype=np.int32)
             self.seqlens_kv, self.offsets_kv = get_seqlens_and_offsets(self.segment_ids_kv)
         else:
             self.num_segments_per_seq = 1
@@ -588,18 +673,68 @@ class FusedAttnRunner:
             )
             self.segment_pos_q = self.segment_pos_kv = None
             self.seqlens_q = self.seqlens_kv = self.offsets_q = self.offsets_kv = None
+        print(f"self.segment_ids_q: {self.segment_ids_q}, \n self.segment_pos_q: {self.segment_pos_q}, \n self.pad_q: {self.pad_q}, \n self.seqlens_q: {self.seqlens_q}, \n self.offsets_q: { self.offsets_q} \n")
+        print(f"self.segment_ids_kv: {self.segment_ids_kv}, \n self.segment_pos_kv: {self.segment_pos_kv}, \n self.pad_kv: {self.pad_kv}, \n self.seqlens_kv: {self.seqlens_kv}, \n self.offsets_kv: { self.offsets_kv} \n")
+        # KL - Modify the seqlens and run the tests for seqlens for THD ONLY
+        # self.seqlens_kv = self.seqlens_kv.at[:,0:8].set([[1, 9, 2, 1, 9, 17, 25, 33]])
+        # self.offsets_kv = self.offsets_kv.at[:,0:8].set([[0, 0, 15, 24, 24, 24, 24, 24]])
+        # print(f"self.seqlens_q: {self.seqlens_q}, \n self.offsets_q: { self.offsets_q} \n")
+        # print(f"self.seqlens_kv: {self.seqlens_kv}, \n self.offsets_kv: { self.offsets_kv} \n")
+        # For reference code
+        if is_test_mode and not is_thd_regular:
+            self.mask = make_mask_hardcoded(batch_size=self.batch_size, total_tokens_q=self.max_seqlen_q, total_tokens_kv=self.max_seqlen_kv, num_seg=self.num_segments_per_seq, cp_size=test_cp_size)
+        else:
+            self.mask = make_mask(
+                self.segment_ids_q,
+                self.segment_ids_kv,
+                self.segment_pos_q,
+                self.segment_pos_kv,
+                self.attn_mask_type,
+                self.window_size,
+            )
+        breakpoint()
+        # concatmask = [[[jnp.concatenate([jnp.zeros(1, dtype=bool), jnp.ones(63, dtype=bool)]),
+        #               jnp.concatenate([jnp.zeros(9, dtype=bool), jnp.ones(55, dtype=bool)]),
+        #               jnp.concatenate([jnp.ones(15, dtype=bool), jnp.zeros(2, dtype=bool), jnp.ones(47, dtype=bool)]),
+        #               jnp.concatenate([jnp.ones(24, dtype=bool), jnp.zeros(1, dtype=bool), jnp.ones(39, dtype=bool)]),
+        #               jnp.concatenate([jnp.ones(24, dtype=bool), jnp.zeros(9, dtype=bool), jnp.ones(31, dtype=bool)]),
+        #               jnp.concatenate([jnp.ones(24, dtype=bool), jnp.zeros(17, dtype=bool), jnp.ones(23, dtype=bool)]),
+        #               jnp.concatenate([jnp.ones(24, dtype=bool), jnp.zeros(25, dtype=bool), jnp.ones(15, dtype=bool)]),
+        #               jnp.concatenate([jnp.ones(24, dtype=bool), jnp.zeros(33, dtype=bool), jnp.ones(7, dtype=bool)])]],
+        #               [[jnp.concatenate([jnp.zeros(1, dtype=bool), jnp.ones(63, dtype=bool)]),
+        #               jnp.concatenate([jnp.zeros(9, dtype=bool), jnp.ones(55, dtype=bool)]),
+        #               jnp.concatenate([jnp.ones(15, dtype=bool), jnp.zeros(2, dtype=bool), jnp.ones(47, dtype=bool)]),
+        #               jnp.concatenate([jnp.ones(24, dtype=bool), jnp.zeros(1, dtype=bool), jnp.ones(39, dtype=bool)]),
+        #               jnp.concatenate([jnp.ones(24, dtype=bool), jnp.zeros(9, dtype=bool), jnp.ones(31, dtype=bool)]),
+        #               jnp.concatenate([jnp.ones(24, dtype=bool), jnp.zeros(17, dtype=bool), jnp.ones(23, dtype=bool)]),
+        #               jnp.concatenate([jnp.ones(24, dtype=bool), jnp.zeros(25, dtype=bool), jnp.ones(15, dtype=bool)]),
+        #               jnp.concatenate([jnp.ones(24, dtype=bool), jnp.zeros(33, dtype=bool), jnp.ones(7, dtype=bool)])]]]
+        # self.mask = jnp.array(concatmask)
+        # self.mask=[[
+        #     [False]*1 + [True]*63,
+        #     [False]*9 + [True]*55,
+        #     [True]*15 + [False]*2 + [True]*47,
+        #     [True]*24 + [False]*1 + [True]*39,
+        #     [True]*24 + [False]*9 + [True]*31,
+        #     [True]*24 + [False]*17 + [True]*23,
+        #     [True]*24 + [False]*25 + [True]*15,
+        #     [True]*24 + [False]*33 + [True]*7,            
+        # ],
+        #            [    [False]*1 + [True]*63,
+        #     [False]*9 + [True]*55,
+        #     [True]*15 + [False]*2 + [True]*47,
+        #     [True]*24 + [False]*1 + [True]*39,
+        #     [True]*24 + [False]*9 + [True]*31,
+        #     [True]*24 + [False]*17 + [True]*23,
+        #     [True]*24 + [False]*25 + [True]*15,
+        #     [True]*24 + [False]*33 + [True]*7,            
+        # ]]
 
         breakpoint()
-        # For reference code
-        self.mask = make_mask(
-            self.segment_ids_q,
-            self.segment_ids_kv,
-            self.segment_pos_q,
-            self.segment_pos_kv,
-            self.attn_mask_type,
-            self.window_size,
-        )
-
+        #import sys
+        #with np.printoptions(threshold=sys.maxsize):
+        #    print(f"self.mask: {self.mask[0, 0, 0:10]}")
+        #print(f"self.mask: {self.mask}")
         if self.cp_size > 1 and self.cp_load_balanced:
             if self.qkv_layout.is_thd():
                 reorder_strategy = ReorderStrategy.Striped
@@ -1015,16 +1150,49 @@ class FusedAttnRunner:
             jnp.bfloat16,
             id="2-2048-1024-12-12-64-64-BF16-CROSS",
         ),
+        # pytest.param(
+        #     2,
+        #     8,
+        #     64,
+        #     12,
+        #     12,
+        #     64,
+        #     64,
+        #     jnp.bfloat16,
+        #     id="2-8-64-12-12-64-64-BF16-CROSS",
+        # ),
         pytest.param(
-            1,
-            8,
-            64,
+            2,
+            16384,
+            16384,
             12,
             12,
             64,
             64,
             jnp.bfloat16,
-            id="1-8-64-12-12-64-64-BF16-CROSS",
+            id="2-16384-16384-12-12-64-64-BF16-CROSS",
+        ),
+        pytest.param(
+            2,
+            8192,
+            8192,
+            12,
+            12,
+            64,
+            64,
+            jnp.bfloat16,
+            id="2-8192-8192-12-12-64-64-BF16-CROSS",
+        ),
+        pytest.param(
+            2,
+            1024,
+            1024,
+            12,
+            12,
+            64,
+            64,
+            jnp.bfloat16,
+            id="2-1024-1024-12-12-64-64-BF16-CROSS",
         ),
         pytest.param(
             2, 2048, 2048, 12, 6, 64, 64, jnp.bfloat16, id="2-2048-2048-12-6-64-64-BF16-GQA"
@@ -1096,7 +1264,7 @@ class TestFusedAttn:
             pytest.param(AttnBiasType.POST_SCALE_BIAS, BiasShape._11SS, id="POST_SCALE_BIAS-11SS"),
         ],
     )
-    def _test_forward(
+    def test_forward(
         b,
         s_q,
         s_kv,
