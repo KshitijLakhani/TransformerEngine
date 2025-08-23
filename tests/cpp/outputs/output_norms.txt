@@ -1,0 +1,112 @@
+NVTE_FWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X0
+NVTE_FWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X1
+NVTE_BWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X0
+NVTE_BWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X1
+NVTE_FWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X0
+NVTE_FWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X1
+NVTE_BWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X0
+NVTE_BWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X1
+NVTE_FWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X0
+NVTE_FWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X1
+NVTE_BWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X0
+NVTE_BWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X1
+NVTE_FWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X0
+NVTE_FWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X1
+NVTE_BWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X0
+NVTE_BWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X1
+NVTE_FWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X0
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *LN*.*X0
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_FWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X1
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *LN*.*X1
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_BWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X0
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *LN*.*X0
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_BWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X1
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *LN*.*X1
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_FWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X0
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *RMS*.*X0
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_FWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X1
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *RMS*.*X1
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_BWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X0
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *RMS*.*X0
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_BWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X1
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *RMS*.*X1
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_FWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X0
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *LN*.*X0
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_FWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X1
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *LN*.*X1
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_BWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X0
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *LN*.*X0
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_BWD_LAYERNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*LN*.*X1
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *LN*.*X1
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_FWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X0
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *RMS*.*X0
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_FWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X1
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *RMS*.*X1
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_BWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X0
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *RMS*.*X0
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+NVTE_BWD_RMSNORM_USE_CUDNN=1 ./build/operator/test_operator --gtest_filter=*RMS*.*X1
+Running main() from /home/klakhani/rel/TransformerEngine/3rdparty/googletest/googletest/src/gtest_main.cc
+Note: Google Test filter = *RMS*.*X1
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.

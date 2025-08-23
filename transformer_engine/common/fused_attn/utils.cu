@@ -390,6 +390,19 @@ cudnn_frontend::Operation ternary_pw_op_create(cudnn_frontend::Tensor const &xDe
   return pw_op_created;
 }
 
+/*template <typename T>
+__global__ void print_tensor_elements(const T *const data, const size_t rows, const size_t cols) {
+  if ((threadIdx.x == 0) && (threadIdx.y == 0) && (blockIdx.x == 0) && (blockIdx.y == 0)) {
+    for (size_t i = 0; i < rows; ++i) {
+      for (size_t j = 0; j < cols; ++j) {
+        const size_t idx = i * cols + j;
+        printf("%8f  ", static_cast<float>(data[idx]));
+      }
+      printf("\n");
+    }
+  }
+}*/
+
 // convert cu_seqlens_q to qkv/o_ragged_offset and actual_seqlens_q
 __global__ void cu_seqlens_to_offsets(int64_t b, int64_t h, int64_t d, int32_t *cu_seqlens_q,
                                       int32_t *actual_seqlens_q, int32_t *qkv_ragged_offset,
@@ -410,9 +423,19 @@ __global__ void cu_seqlens_to_actual_seqlens(int64_t actual_b, int64_t max_b,
                                              int32_t const *const kv_cu_seqlens, int32_t *q_seqlens,
                                              int32_t *kv_seqlens) {
   size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+  /*if(tid == 0)
+  {
+    printf("actual_b: %lld \n", (long long int)actual_b);
+    printf("max_b: %lld \n", (long long int)max_b);
+  }*/
   if (tid < actual_b) {
     q_seqlens[tid] = q_cu_seqlens[tid + 1] - q_cu_seqlens[tid];
+    //q_seqlens[tid] = 1;
     kv_seqlens[tid] = kv_cu_seqlens[tid + 1] - kv_cu_seqlens[tid];
+    //int32_t tmp[8] = {1, 9, 2, 1, 9, 17, 25, 33};
+    //kv_seqlens[tid] = tmp[tid];
+    // Hardcoding for 8192 case
+    //kv_seqlens[tid] = tid%1024 + 1;
   } else if (tid < max_b) {
     q_seqlens[tid] = 0;
     kv_seqlens[tid] = 0;
@@ -428,16 +451,28 @@ __device__ void cu_seqlens_padded_to_offsets_impl(
     OFFSETS_T *offsets_v, OFFSETS_T *offsets_o, OFFSETS_T *offsets_s) {
   size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
   auto cu_seqlens_id = min(tid, actual_b);
+  /*if (tid == 0) {
+    printf("actual_b: %lld \n", (long long int)actual_b);
+    printf("max_b: %lld \n", (long long int)max_b);
+    printf("h: %lld \n", (long long int)h);
+    printf("hg: %lld \n", (long long int)hg);
+    printf("d_qk: %lld \n", (long long int)d_qk);
+    printf("d_v: %lld \n", (long long int)d_v);
+  }*/
   if (tid <= max_b) {
     if (offsets_s != nullptr) {
       offsets_s[tid] = h * cu_seqlens_q_padded[cu_seqlens_id];
+      //offsets_s[tid]= 0;
     }
     if (offsets_q != nullptr && offsets_o != nullptr) {
       offsets_o[tid] = h * d_v * cu_seqlens_q_padded[cu_seqlens_id];
+      //offsets_o[tid] = 0; 
       switch (layout_group) {
         case NVTE_QKV_Layout_Group::NVTE_HD_HD_HD:
         case NVTE_QKV_Layout_Group::NVTE_Paged_KV_HD_HD_HD:
           offsets_q[tid] = h * d_qk * cu_seqlens_q_padded[cu_seqlens_id];
+          //OFFSETS_T tmp[8] = {0};
+          //offsets_q[tid]= 0;
           break;
         case NVTE_QKV_Layout_Group::NVTE_3HD:
         case NVTE_QKV_Layout_Group::NVTE_H3D:
@@ -455,6 +490,13 @@ __device__ void cu_seqlens_padded_to_offsets_impl(
         case NVTE_QKV_Layout_Group::NVTE_Paged_KV_HD_HD_HD:
           offsets_k[tid] = hg * d_qk * cu_seqlens_kv_padded[cu_seqlens_id];
           offsets_v[tid] = hg * d_v * cu_seqlens_kv_padded[cu_seqlens_id];
+          //OFFSETS_T tmp[8] = {0, 0, 15, 24, 24, 24, 24, 24};
+          //offsets_k[tid] = hg * d_qk * tmp[tid];
+          //offsets_v[tid] = hg * d_v * tmp[tid];
+          // Hardcoding for 8192 case
+          /*OFFSETS_T tmp = floor(tid/1024) * 1024;
+          offsets_k[tid] = hg * d_qk * tmp;
+          offsets_v[tid] = hg * d_v * tmp;*/
           break;
         case NVTE_QKV_Layout_Group::NVTE_3HD:
         case NVTE_QKV_Layout_Group::NVTE_H3D:

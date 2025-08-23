@@ -1126,5 +1126,6 @@ def fused_attn(
         context_parallel_axis=context_parallel_axis,
         context_checkpoint_name=context_checkpoint_name,
     )
-
+    breakpoint()
+    print(f"output: {output}")
     return output
