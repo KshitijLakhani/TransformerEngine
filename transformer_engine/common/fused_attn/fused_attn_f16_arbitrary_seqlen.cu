@@ -439,7 +439,9 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
     if (is_bias) {
       variant_pack[bias] = devPtrBias;
     }
-    bool print_tensors = false;
+    bool print_tensors = true;
+    // For the thd_regular case, the actual_b = 18
+    bool print_tensors_custom_mask = actual_b >= 300 ? true : false;
     if (is_padding) {
       constexpr size_t nthreads_per_block = 128;
       const size_t grid = (b + nthreads_per_block - 1) / nthreads_per_block;
@@ -453,44 +455,70 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
       if (print_tensors)
       {
         if(devPtrCuSeqlensQ) {
-          //print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrCuSeqlensQ), 1, 0, actual_b, /*does not matter for single row*/actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrCuSeqlensQ), 1, 0, 8, /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrCuSeqlensQ), 1,
-                                                       1024, 1032,
+          if(print_tensors_custom_mask)
+          {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrCuSeqlensQ), 1, 0, 8, /*does not matter for single row*/ actual_b);
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrCuSeqlensQ), 1,
+                                                        1024, 1032,
                                                        /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrCuSeqlensQ), 1,
-                                                       8184, 8192,
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrCuSeqlensQ), 1,
+                                                        8184, 8192,
                                                        /*does not matter for single row*/ actual_b);
+          }
+          else
+          {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrCuSeqlensQ), 1, 0, actual_b, /*does not matter for single row*/actual_b);
+          }
         }
         if (devActualSeqlenQ) {
-          //print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devActualSeqlenQ), 1, 0, actual_b, /*does not matter for single row*/actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devActualSeqlenQ), 1, 0, 8, /*does not matter for single row*/actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devActualSeqlenQ), 1,
+          if (print_tensors_custom_mask)
+          {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devActualSeqlenQ), 1, 0, 8, /*does not matter for single row*/actual_b);
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devActualSeqlenQ), 1,
                                                        1024, 1032,
                                                        /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devActualSeqlenQ), 1,
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devActualSeqlenQ), 1,
                                                        8184, 8192,
-                                                       /*does not matter for single row*/ actual_b);
+                                                       /*does not matter for single row*/ actual_b); 
+          }
+          else {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devActualSeqlenQ), 1, 0, actual_b, /*does not matter for single row*/actual_b);
+          }
         }
         if(devPtrCuSeqlensKV) {
-          //print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrCuSeqlensKV), 1, 0, actual_b, /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrCuSeqlensKV), 1, 0, 8, /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrCuSeqlensKV), 1,
-                                                       1024, 1032,
-                                                       /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrCuSeqlensKV), 1,
-                                                       8184, 8192,
-                                                       /*does not matter for single row*/ actual_b);
+          if(print_tensors_custom_mask)
+          {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(
+                static_cast<int32_t *>(devPtrCuSeqlensKV), 1, 0, 8,
+                /*does not matter for single row*/ actual_b);
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(
+                static_cast<int32_t *>(devPtrCuSeqlensKV), 1, 1024, 1032,
+                /*does not matter for single row*/ actual_b);
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(
+                static_cast<int32_t *>(devPtrCuSeqlensKV), 1, 8184, 8192,
+                /*does not matter for single row*/ actual_b);
+          }
+          else {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrCuSeqlensKV), 1, 0, actual_b, /*does not matter for single row*/ actual_b);
+          }
         }
         if(devActualSeqlenKV) {
-          //print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devActualSeqlenKV), 1, 0, actual_b, /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devActualSeqlenKV), 1, 0, 8, /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devActualSeqlenKV), 1,
-                                                       1024, 1032,
-                                                       /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devActualSeqlenKV), 1,
-                                                       8184, 8192,
-                                                       /*does not matter for single row*/ actual_b);
+          if (print_tensors_custom_mask)
+          {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(
+                static_cast<int32_t *>(devActualSeqlenKV), 1, 0, 8,
+                /*does not matter for single row*/ actual_b);
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(
+                static_cast<int32_t *>(devActualSeqlenKV), 1, 1024, 1032,
+                /*does not matter for single row*/ actual_b);
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(
+                static_cast<int32_t *>(devActualSeqlenKV), 1, 8184, 8192,
+                /*does not matter for single row*/ actual_b);
+          }
+          else
+          {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devActualSeqlenKV), 1, 0, actual_b, /*does not matter for single row*/ actual_b);
+          }
         }
       }
       variant_pack[seq_q] = devActualSeqlenQ;
@@ -535,51 +563,74 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
       if (print_tensors)
       {
         if (devPtrSeqOffsetsQ) {
-          //print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsQ), 1, 0,actual_b, /*does not matter for single row*/actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsQ), 1,
+          if(print_tensors_custom_mask)
+          {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsQ), 1,
                                                        0, 8,
                                                        /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsQ), 1,
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsQ), 1,
                                                        1024, 1032,
                                                        /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsQ), 1,
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsQ), 1,
                                                        8184, 8192,
                                                        /*does not matter for single row*/ actual_b);
+          }
+          else
+          {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsQ), 1, 0,actual_b, /*does not matter for single row*/actual_b);
+          }
         }
         if (devOffsetsQ) {
-          //print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsQ), 1, 0,actual_b,/*does not matter for single row*/actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsQ), 1, 0,
+           if(print_tensors_custom_mask)
+           {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsQ), 1, 0,
                                                        8,
                                                        /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsQ), 1, 1024,
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsQ), 1, 1024,
                                                        1032,
                                                        /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsQ), 1, 8184,
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsQ), 1, 8184,
                                                        8192,
                                                        /*does not matter for single row*/ actual_b);
+           }
+           else
+           {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsQ), 1, 0,actual_b,/*does not matter for single row*/actual_b);
+           }
         }
         if (devPtrSeqOffsetsKV) {
-          //print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsKV),1, 0,actual_b,/*does not matter for single row*/actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsKV),
+           if(print_tensors_custom_mask)
+           {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsKV),
                                                        1, 0, 8,
                                                        /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsKV),
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsKV),
                                                        1, 1024, 1032,
                                                        /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsKV),
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsKV),
                                                        1, 8184, 8192,
                                                        /*does not matter for single row*/ actual_b);
+           }
+           else{
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int32_t *>(devPtrSeqOffsetsKV),1, 0,actual_b,/*does not matter for single row*/actual_b);
+           }
         }
         if (devOffsetsK) {
-          //print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsK), 1, 0,actual_b, /*does not matter for single row*/actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsK), 1, 0,
+           if(print_tensors_custom_mask)
+           {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsK), 1, 0,
                                                        8,
                                                        /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsK), 1, 1024, 1032,
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsK), 1, 1024, 1032,
                                                        /*does not matter for single row*/ actual_b);
-          print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsK), 1, 8184,
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsK), 1, 8184,
                                                        8192,
                                                        /*does not matter for single row*/ actual_b);
+           }
+           else
+           {
+            print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsK), 1, 0,actual_b, /*does not matter for single row*/actual_b);
+           }
         }
         if (devOffsetsS) {
           //print_tensor_elements_2<<<1, 1, 0, stream>>>(static_cast<int64_t *>(devOffsetsS), 1, 0,actual_b,/*does not matter for single row*/actual_b);

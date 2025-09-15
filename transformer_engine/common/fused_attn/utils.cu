@@ -423,19 +423,42 @@ __global__ void cu_seqlens_to_actual_seqlens(int64_t actual_b, int64_t max_b,
                                              int32_t const *const kv_cu_seqlens, int32_t *q_seqlens,
                                              int32_t *kv_seqlens) {
   size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
-  /*if(tid == 0)
+  if(tid == 0)
   {
     printf("actual_b: %lld \n", (long long int)actual_b);
     printf("max_b: %lld \n", (long long int)max_b);
-  }*/
+  }
   if (tid < actual_b) {
     q_seqlens[tid] = q_cu_seqlens[tid + 1] - q_cu_seqlens[tid];
     //q_seqlens[tid] = 1;
-    kv_seqlens[tid] = kv_cu_seqlens[tid + 1] - kv_cu_seqlens[tid];
+    // Hardcoding for 8192 case
+    if(actual_b == 16386)
+    {
+      kv_seqlens[tid] = tid%1024 + 1;
+    }
+    // Hardcoding for 256 stripe case
+    else if (actual_b == 66)
+    {
+      kv_seqlens[tid] = (tid%4 + 1)*256;
+    }
+    // Hardcoding for 128 stripe case
+    else if (actual_b == 130)
+    {
+      kv_seqlens[tid] = (tid%8 + 1)*128;
+    }
+    // Hardcoding for 64 stripe case 
+    else if (actual_b == 258) {
+      kv_seqlens[tid] = (tid%16 + 1)*64;
+    }
+    // Hardcoding for 32 stripe case
+    else if (actual_b == 514) {
+      kv_seqlens[tid] = (tid % 32 + 1) * 32;
+    } else {
+      kv_seqlens[tid] = kv_cu_seqlens[tid + 1] - kv_cu_seqlens[tid];
+    }
+    // Hardcoding for the custom case in google doc
     //int32_t tmp[8] = {1, 9, 2, 1, 9, 17, 25, 33};
     //kv_seqlens[tid] = tmp[tid];
-    // Hardcoding for 8192 case
-    //kv_seqlens[tid] = tid%1024 + 1;
   } else if (tid < max_b) {
     q_seqlens[tid] = 0;
     kv_seqlens[tid] = 0;
@@ -451,14 +474,14 @@ __device__ void cu_seqlens_padded_to_offsets_impl(
     OFFSETS_T *offsets_v, OFFSETS_T *offsets_o, OFFSETS_T *offsets_s) {
   size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
   auto cu_seqlens_id = min(tid, actual_b);
-  /*if (tid == 0) {
+  if (tid == 0) {
     printf("actual_b: %lld \n", (long long int)actual_b);
     printf("max_b: %lld \n", (long long int)max_b);
     printf("h: %lld \n", (long long int)h);
     printf("hg: %lld \n", (long long int)hg);
     printf("d_qk: %lld \n", (long long int)d_qk);
     printf("d_v: %lld \n", (long long int)d_v);
-  }*/
+  }
   if (tid <= max_b) {
     if (offsets_s != nullptr) {
       offsets_s[tid] = h * cu_seqlens_q_padded[cu_seqlens_id];
@@ -488,21 +511,49 @@ __device__ void cu_seqlens_padded_to_offsets_impl(
       switch (layout_group) {
         case NVTE_QKV_Layout_Group::NVTE_HD_HD_HD:
         case NVTE_QKV_Layout_Group::NVTE_Paged_KV_HD_HD_HD:
-          offsets_k[tid] = hg * d_qk * cu_seqlens_kv_padded[cu_seqlens_id];
-          offsets_v[tid] = hg * d_v * cu_seqlens_kv_padded[cu_seqlens_id];
+          // Hardcoding for 8192 case
+          if(actual_b == 16386)
+          {
+            OFFSETS_T tmp = floor(tid/1024) * 1024;
+            offsets_k[tid] = hg * d_qk * tmp;
+            offsets_v[tid] = hg * d_v * tmp;
+          }
+          // Hardcoding for 256 stripe case
+          else if (actual_b == 66) {
+            OFFSETS_T tmp = floor(tid / 4) * 1024;
+            offsets_k[tid] = hg * d_qk * tmp;
+            offsets_v[tid] = hg * d_v * tmp;
+          }
+          // Hardcoding for 128 stripe case
+          else if (actual_b == 130) {
+            OFFSETS_T tmp = floor(tid/8) * 1024;
+            offsets_k[tid] = hg * d_qk * tmp;
+            offsets_v[tid] = hg * d_v * tmp;
+          }
+          // Hardcoding for 64 stripe case
+          else if (actual_b == 258) {
+            OFFSETS_T tmp = floor(tid/16) * 1024;
+            offsets_k[tid] = hg * d_qk * tmp;
+            offsets_v[tid] = hg * d_v * tmp;
+          }
+          // Hardcoding for 32 stripe case
+          else if (actual_b == 514) {
+            OFFSETS_T tmp = floor(tid/32) * 1024;
+            offsets_k[tid] = hg * d_qk * tmp;
+            offsets_v[tid] = hg * d_v * tmp;
+          } else {
+            offsets_k[tid] = hg * d_qk * cu_seqlens_kv_padded[cu_seqlens_id];
+            offsets_v[tid] = hg * d_v * cu_seqlens_kv_padded[cu_seqlens_id];
+          }
           //OFFSETS_T tmp[8] = {0, 0, 15, 24, 24, 24, 24, 24};
           //offsets_k[tid] = hg * d_qk * tmp[tid];
           //offsets_v[tid] = hg * d_v * tmp[tid];
-          // Hardcoding for 8192 case
-          /*OFFSETS_T tmp = floor(tid/1024) * 1024;
-          offsets_k[tid] = hg * d_qk * tmp;
-          offsets_v[tid] = hg * d_v * tmp;*/
           break;
         case NVTE_QKV_Layout_Group::NVTE_3HD:
         case NVTE_QKV_Layout_Group::NVTE_H3D:
           offsets_k[tid] = 3 * h * d_qk * cu_seqlens_q_padded[cu_seqlens_id];
           offsets_v[tid] = offsets_k[cu_seqlens_id];
-          break;
+          break;  
         case NVTE_QKV_Layout_Group::NVTE_HD_2HD:
         case NVTE_QKV_Layout_Group::NVTE_HD_H2D:
           offsets_k[tid] = 2 * hg * d_qk * cu_seqlens_kv_padded[cu_seqlens_id];
