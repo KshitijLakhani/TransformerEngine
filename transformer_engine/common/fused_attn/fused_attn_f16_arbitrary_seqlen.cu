@@ -433,9 +433,7 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
           actual_b, b, static_cast<const int32_t *>(devPtrCuSeqlensQ),
           static_cast<const int32_t *>(devPtrCuSeqlensKV), static_cast<int32_t *>(devActualSeqlenQ),
           static_cast<int32_t *>(devActualSeqlenKV));
-<<<<<<< HEAD
       NVTE_CHECK_CUDA(cudaGetLastError());
-=======
       if (print_tensors)
       {
         if(devPtrCuSeqlensQ) {
@@ -505,7 +503,6 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
           }
         }
       }
->>>>>>> 6da2c8530 (Test: Tmp code for benchmarking)
       variant_pack[seq_q] = devActualSeqlenQ;
       variant_pack[seq_kv] = devActualSeqlenKV;
     }
