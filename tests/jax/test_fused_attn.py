@@ -536,6 +536,7 @@ class FusedAttnRunner:
                 segment_ids[:, start_idx:end_idx] = seg_idx+1
                 segment_pos[:, start_idx:end_idx] = range(int(num_tokens_per_seg))
             return segment_ids, segment_pos, pad
+
         def gen_custom_tokens_segment_ids_2(batch_size, total_tokens, num_seg, cp_size, is_q):
             assert total_tokens%num_seg==0, "total_tokens must be a multiple of num_seg"
             num_tokens_per_seg = total_tokens/num_seg
@@ -546,7 +547,24 @@ class FusedAttnRunner:
                 pad = np.zeros((batch_size, total_tokens), dtype=np.int32)
                 segment_ids[:, :] = range(1, int(total_tokens+1))
             else: # for kv
-                segment_ids, segment_pos, pad = gen_custom_tokens_segment_ids_1(batch_size=batch_size, total_tokens=total_tokens, num_seg=cp_size)
+                segment_ids, segment_pos, pad = gen_custom_tokens_segment_ids_1(batch_size=batch_size, total_tokens=total_tokens, num_seg=cp_size) # ?
+            return segment_ids, segment_pos, pad
+    
+        def gen_custom_tokens_segment_ids_3(batch_size, total_tokens, num_seg, cp_size, is_q):
+            assert total_tokens%num_seg==0, "total_tokens must be a multiple of num_seg"
+            num_tokens_per_seg = total_tokens/num_seg
+            print(f"batch_size: {batch_size}, total_tokens: {total_tokens}, num_seg: {num_seg}, num_tokens_per_seg: {num_tokens_per_seg}")
+            segment_ids = np.zeros((batch_size, total_tokens), dtype=np.int32)
+            segment_pos = np.zeros((batch_size, total_tokens), dtype=np.int32)
+            pad = np.zeros((batch_size, total_tokens), dtype=np.int32)
+            if is_q: # for q
+                for seg_idx in range(num_seg):
+                    start_idx = int(seg_idx*num_tokens_per_seg)
+                    end_idx = int((seg_idx+1)*num_tokens_per_seg)
+                    segment_ids[:, start_idx:end_idx] = seg_idx+1
+                    segment_pos[:, start_idx:end_idx] = range(int(num_tokens_per_seg))
+            else: # for kv
+                segment_ids, segment_pos, pad = gen_custom_tokens_segment_ids_1(batch_size=batch_size, total_tokens=total_tokens, num_seg=num_seg) # ?
             return segment_ids, segment_pos, pad
 
 
@@ -600,11 +618,24 @@ class FusedAttnRunner:
         if self.qkv_layout.is_thd():
             # KL code
             is_test_mode = True
-            is_thd_regular = True
+            is_thd_regular = False
+            is_striped_segments_size_256 = True
+            is_striped_segments_size_128 = False
+            is_striped_segments_size_64 = False
+            is_striped_segments_size_32 = False
             if is_test_mode and is_thd_regular:
                 self.num_segments_per_seq = 8
             elif is_test_mode and not is_thd_regular:
-                self.num_segments_per_seq = self.max_seqlen_q
+                if is_striped_segments_size_256:
+                    self.num_segments_per_seq = 32
+                elif is_striped_segments_size_128:
+                    self.num_segments_per_seq = 64
+                elif is_striped_segments_size_64:
+                    self.num_segments_per_seq = 128
+                elif is_striped_segments_size_32:
+                    self.num_segments_per_seq = 256
+                else:
+                    self.num_segments_per_seq = self.max_seqlen_q
             else:
                 self.num_segments_per_seq = 2
             print(f"self.num_segments_per_seq: {self.num_segments_per_seq}")
@@ -636,14 +667,20 @@ class FusedAttnRunner:
                 self.segment_ids_q, self.segment_pos_q, self.pad_q = gen_custom_tokens_segment_ids_1(batch_size=self.batch_size, total_tokens=self.max_seqlen_q, num_seg=self.num_segments_per_seq)
             if is_test_mode and not is_thd_regular:
                 test_cp_size = 8
-                self.segment_ids_q, self.segment_pos_q, self.pad_q = gen_custom_tokens_segment_ids_2(batch_size=self.batch_size, total_tokens=self.max_seqlen_q, num_seg=self.num_segments_per_seq, cp_size=test_cp_size, is_q=True)
+                if is_striped_segments_size_256 or is_striped_segments_size_128 or is_striped_segments_size_64 or is_striped_segments_size_32:
+                    self.segment_ids_q, self.segment_pos_q, self.pad_q = gen_custom_tokens_segment_ids_3(batch_size=self.batch_size, total_tokens=self.max_seqlen_q, num_seg=self.num_segments_per_seq, cp_size=test_cp_size, is_q=True)
+                else: 
+                    self.segment_ids_q, self.segment_pos_q, self.pad_q = gen_custom_tokens_segment_ids_2(batch_size=self.batch_size, total_tokens=self.max_seqlen_q, num_seg=self.num_segments_per_seq, cp_size=test_cp_size, is_q=True)
             breakpoint()
             self.seqlens_q, self.offsets_q = get_seqlens_and_offsets(self.segment_ids_q)
             # TODO(rewang): record only self attention and find the reason of cross attention
             if self.qkv_layout == QKVLayout.T3HD or self.max_seqlen_q == self.max_seqlen_kv:
-                self.segment_ids_kv = self.segment_ids_q
-                self.segment_pos_kv = self.segment_pos_q
-                self.pad_kv = self.pad_q
+                if is_striped_segments_size_256 or is_striped_segments_size_128 or is_striped_segments_size_64 or is_striped_segments_size_32:
+                    self.segment_ids_kv, self.segment_pos_kv, self.pad_kv = gen_custom_tokens_segment_ids_3(batch_size=self.batch_size, total_tokens=self.max_seqlen_q, num_seg=self.num_segments_per_seq, cp_size=test_cp_size, is_q=False)
+                else:
+                    self.segment_ids_kv = self.segment_ids_q
+                    self.segment_pos_kv = self.segment_pos_q
+                    self.pad_kv = self.pad_q
             else:
                 # Force kv_len >= q_len for swa, otherwise, cuDNN kernels don't support
                 min_segment_len = None if self.window_size is None else self.seqlens_q
@@ -919,28 +956,31 @@ class FusedAttnRunner:
             ],
         )
 
-        with self.mesh, fp8_autocast(mesh_resource=self.mesh_resource):
-            primitive_out = customcall_fused_dpa_jit(*customcall_args)
-            primitive_out = self.cp_inverse_reorder_fn(primitive_out)
-
-        reference_out = jax_dpa(*args, **kwargs)
-
-        if self.is_training and self.dropout_prob > 0.0:
-            return
-
-        primitive_valid, primitive_invalid, reference_valid, reference_invalid = (
-            _split_valid_and_invalid(primitive_out, reference_out, self.pad_q)
-        )
-
-        assert_allclose(primitive_invalid, jnp.zeros_like(primitive_invalid), dtype=self.dtype)
-        assert_allclose(primitive_valid, reference_valid, dtype=self.dtype)
-
-        if self.coll_count_ref is not None:
+        iter = 10
+        for idx in range(iter):
             with self.mesh, fp8_autocast(mesh_resource=self.mesh_resource):
-                target_hlo = (
-                    customcall_fused_dpa_jit.lower(*customcall_args, **kwargs).compile().as_text()
-                )
-            assert_equal_collectives(target_hlo, self.coll_count_ref)
+                primitive_out = customcall_fused_dpa_jit(*customcall_args)
+                primitive_out = self.cp_inverse_reorder_fn(primitive_out)
+
+            reference_out = jax_dpa(*args, **kwargs)
+
+            if self.is_training and self.dropout_prob > 0.0:
+                return
+
+            primitive_valid, primitive_invalid, reference_valid, reference_invalid = (
+                _split_valid_and_invalid(primitive_out, reference_out, self.pad_q)
+            )
+
+            assert_allclose(primitive_invalid, jnp.zeros_like(primitive_invalid), dtype=self.dtype)
+            assert_allclose(primitive_valid, reference_valid, dtype=self.dtype)
+
+            if self.coll_count_ref is not None:
+                with self.mesh, fp8_autocast(mesh_resource=self.mesh_resource):
+                    target_hlo = (
+                        customcall_fused_dpa_jit.lower(*customcall_args, **kwargs).compile().as_text()
+                    )
+                assert_equal_collectives(target_hlo, self.coll_count_ref)
+        
 
     def test_backward(self):
         """
@@ -1120,6 +1160,7 @@ class FusedAttnRunner:
         pytest.param(AttnMaskType.PADDING_MASK, id="PADDING"),
         pytest.param(AttnMaskType.CAUSAL_MASK, id="CAUSAL"),
         pytest.param(AttnMaskType.PADDING_CAUSAL_MASK, id="PADDING_CAUSAL"),
+        pytest.param(AttnMaskType.PADDING_CAUSAL_BOTTOM_RIGHT_MASK, id="PADDING_CAUSAL_BOTTOM_RIGHT_MASK"),
     ],
 )
 @pytest.mark.parametrize(
