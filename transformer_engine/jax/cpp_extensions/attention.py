@@ -300,7 +300,6 @@ class FusedAttnFwdPrimitive(BasePrimitive):
             q_head_dim,
             v_head_dim,
         ) = FusedAttnHelper.parse_qkv_aval(q_aval, k_aval, v_aval, config.qkv_layout)
-
         output_shape = (*batch_shape, q_max_seqlen, attn_heads, v_head_dim)
         out_aval = q_aval.update(shape=output_shape, dtype=q_dtype)
 
@@ -500,6 +499,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
         _kv_segment_pos,
         config: _FusedAttnConfig,
     ):
+        ##jax.debug.breakpoint()
         assert FusedAttnFwdPrimitive.inner_primitive is not None
 
         sequence_descriptor = SequenceDescriptor(
@@ -508,7 +508,8 @@ class FusedAttnFwdPrimitive(BasePrimitive):
             segment_ids=(_q_segment_ids, _kv_segment_ids),
             segment_pos=(_q_segment_pos, _kv_segment_pos),
         )
-        # breakpoint()
+        ##jax.debug.breakpoint()
+        #jax.debug.print(f"In primitive q_seqlen: {q_seqlen}, \n kv_seqlen: {kv_seqlen}, \n q_seq_offsets: {q_seq_offsets},\n k_seq_offsets: {k_seq_offsets}")
         (q_seqlen, kv_seqlen), (q_seq_offsets, k_seq_offsets) = (
             sequence_descriptor.get_seqlens_and_offsets(
                 config.attn_mask_type,
@@ -517,8 +518,10 @@ class FusedAttnFwdPrimitive(BasePrimitive):
                 config.max_segments_per_seq,
             )
         )
+        #jax.debug.breakpoint()
 
         if config.qkv_layout.is_thd():
+            ##jax.debug.breakpoint()
 
             def _fix_len_take(x, condition, fill_value=-1):
                 x_shape = x.shape
@@ -573,7 +576,7 @@ class FusedAttnFwdPrimitive(BasePrimitive):
 
         q_cu_seqlen = generate_cu_seqlen(q_seqlen.flatten())
         kv_cu_seqlen = generate_cu_seqlen(kv_seqlen.flatten())
-
+        ##jax.debug.breakpoint()
         output, softmax_aux, rng_state, _ = FusedAttnFwdPrimitive.inner_primitive.bind(
             q,
             k,
@@ -1260,11 +1263,11 @@ class _FusedAttnCPWithAllGatherHelper:
 
         def ag(x):
             print(f"[Debug] self.config.cp_axis: {self.config.cp_axis}")
-            jax.debug.print("x before = {}", x)
+            #jax.debug.print("x before = {}", x)
             x = lax_paral_op(
                 x, lax.all_gather, self.config.cp_axis, mesh=self.mesh, axis=1, tiled=True
             )
-            jax.debug.print("x after = {}", x)
+            #jax.debug.print("x after = {}", x)
             if self.config.context_parallel_load_balanced:
                 cp_size = get_mesh_axis_size(self.config.cp_axis, self.mesh)
                 x = reorder_causal_dual_chunk_swap(x, cp_size, 1, to_contiguous=True)
@@ -1328,7 +1331,7 @@ class _FusedAttnCPWithAllGatherHelper:
                 (cp_rank * 2 + 2) * kv_seqlen_per_subrank,
             ]
         
-        #jax.debug.print(f"kv_seqlen_per_subrank: {kv_seqlen_per_subrank},kv_seq_this_rank: {kv_seq_this_rank}")
+        ##jax.debug.print(f"kv_seqlen_per_subrank: {kv_seqlen_per_subrank},kv_seq_this_rank: {kv_seq_this_rank}")
         return kv_seq_this_rank
 
     def slice_kv(self, k, v, slice_seq_len):
@@ -1461,8 +1464,8 @@ class FusedAttnCPWithAllGatherFwdPrimitive(FusedAttnFwdPrimitive):
                 return output, softmax_aux, rng_state
 
             k_ag, v_ag = helper.all_gather_kv(k, v)
-            jax.debug.print("k_ag= {}", k_ag)
-            jax.debug.print("v_ag= {}", v_ag)
+            #jax.debug.print("k_ag= {}", k_ag)
+            #jax.debug.print("v_ag= {}", v_ag)
             
             functions = [
                 partial(_cross_attn, idx, q, k_ag, v_ag, bias, q_seqlen, kv_seqlen, seed)
@@ -1607,8 +1610,8 @@ class FusedAttnCPWithAllGatherBwdPrimitive(FusedAttnBwdPrimitive):
                 return dq_local, dk_local_pad, dv_local_pad, results[1][3]
 
             k_ag, v_ag = helper.all_gather_kv(k, v)
-            jax.debug.print("k_ag= {}", k_ag)
-            jax.debug.print("v_ag= {}", v_ag)
+            #jax.debug.print("k_ag= {}", k_ag)
+            #jax.debug.print("v_ag= {}", v_ag)
             
 
             functions = [
@@ -2300,7 +2303,7 @@ class FusedRingAttnStripedFwdPrimitive(FusedAttnFwdPrimitive):
             q_segment_pos,
             kv_segment_pos,
         ):
-            #jax.debug.print(f"q_seqlen: {q_seqlen}, q_seq_offsets:{q_seq_offsets}, q_segment_ids: {q_segment_ids}, q_segment_pos: {q_segment_pos}")
+            ##jax.debug.print(f"q_seqlen: {q_seqlen}, q_seq_offsets:{q_seq_offsets}, q_segment_ids: {q_segment_ids}, q_segment_pos: {q_segment_pos}")
             
             if q_segment_ids.size == 0 or kv_segment_ids.size == 0:
                 raise ValueError("THD + ring attn only supports passing seqment_ids/pos")
