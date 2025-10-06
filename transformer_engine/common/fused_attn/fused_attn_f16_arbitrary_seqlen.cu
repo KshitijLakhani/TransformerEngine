@@ -76,7 +76,8 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
     void *workspace, size_t *workspace_size, cudaStream_t stream, cudnnHandle_t handle) {
   using namespace transformer_engine;
   std::cout << "b:" << b << " h:" << h << " hg:" << hg << " s_q:" << s_q << " s_kv:" << s_kv
-            << " max_b:" << max_b << " max_t_q:" << max_t_q << " max_t_kv: " << max_t_kv << std::endl;
+            << " max_b:" << max_b << " max_t_q:" << max_t_q << " max_t_kv: " << max_t_kv
+            << " window_size_left:" << window_size_left << " window_size_right:" << window_size_right << std::endl;
   bool is_bias = (bias_type == NVTE_Bias_Type::NVTE_POST_SCALE_BIAS);
   bool is_alibi = (bias_type == NVTE_Bias_Type::NVTE_ALIBI);
   bool is_causal = ((mask_type == NVTE_Mask_Type::NVTE_CAUSAL_MASK) ||
@@ -452,6 +453,9 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
           static_cast<const int32_t *>(devPtrCuSeqlensKV), static_cast<int32_t *>(devActualSeqlenQ),
           static_cast<int32_t *>(devActualSeqlenKV));
       NVTE_CHECK_CUDA(cudaGetLastError());
+      std::cout << "print_tensors: " << print_tensors << 
+                   "print_tensors_custom_mask: "
+                << print_tensors_custom_mask << std::endl;
       if (print_tensors)
       {
         if(devPtrCuSeqlensQ) {
@@ -658,15 +662,11 @@ void fused_attn_arbitrary_seqlen_fwd_impl(
       variant_pack[dropout_seed] = devPtrDropoutSeed;
       variant_pack[dropout_offset] = devPtrDropoutOffset;
     }
-<<<<<<< HEAD
 
     if (is_softmax_offset) {
       variant_pack[softmax_offset] = devPtrSoftmaxOffset;
     }
 
-=======
-    std::cout << "bfr mha_graph->execute" << std::endl;
->>>>>>> 68251fe21 (Test: Tmp code for benchmarking)
     NVTE_CHECK_CUDNN_FE(mha_graph->execute(handle, variant_pack, workspace));
     std::cout << "aftr mha_graph->execute" << std::endl;
   } catch (cudnn_frontend::cudnnException &e) {

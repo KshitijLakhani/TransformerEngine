@@ -457,7 +457,7 @@ __global__ void cu_seqlens_to_actual_seqlens(int64_t actual_b, int64_t max_b,
       kv_seqlens[tid] = kv_cu_seqlens[tid + 1] - kv_cu_seqlens[tid];
     }
     // Hardcoding for the custom case in google doc
-    //int32_t tmp[8] = {1, 9, 2, 1, 9, 17, 25, 33};
+    //int32_t tmp[8] = {11, 1, 12, 11, 1, 12, 0, 0};
     //kv_seqlens[tid] = tmp[tid];
   } else if (tid < max_b) {
     q_seqlens[tid] = 0;
