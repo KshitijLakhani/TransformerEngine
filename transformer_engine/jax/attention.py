@@ -360,6 +360,7 @@ def _get_seqlens_and_offsets(segment_ids, max_segments_per_seq):
     bincount_vmap = jax.vmap(partial(jnp.bincount, length=max_segments_per_seq + 1))
     seqlens_with_zero = bincount_vmap(segment_ids.astype(jnp.int32))
     seqlens = seqlens_with_zero[..., 1:]
+    ##jax.debug.breakpoint()
 
     def _find_offsets(x):
         same_as_previous = jnp.logical_and(x[..., 1:] != x[..., :-1], x[..., 1:] != 0)
@@ -370,14 +371,18 @@ def _get_seqlens_and_offsets(segment_ids, max_segments_per_seq):
         ).squeeze(-1)
 
     offsets = _find_offsets(segment_ids)
+    ##jax.debug.breakpoint()
     return seqlens, offsets
 
 
 def _mask_to_seqlens_offset(mask, max_segments_per_seq):
     assert mask.shape[1] == 1
     row_ids = mask.squeeze(axis=1).max(axis=-1)
+    #.debug.breakpoint()
     q_seqlen, q_offset = _get_seqlens_and_offsets(row_ids, max_segments_per_seq)
+    ##jax.debug.breakpoint()
     col_ids = mask.squeeze(axis=1).max(axis=-2)
+    ##jax.debug.breakpoint()
     kv_seqlen, kv_offset = _get_seqlens_and_offsets(col_ids, max_segments_per_seq)
     return q_seqlen, q_offset, kv_seqlen, kv_offset
 
@@ -447,13 +452,14 @@ def _segment_ids_pos_to_seqlens_offsets(
         return _segment_ids_pos_to_seqlens_offsets_fast_causal_path(
             segment_ids_q, segment_ids_kv, segment_pos_q, segment_pos_kv, max_segments_per_seq
         )
-
     # (1 = attend, 0 = masked)
     segment_mask = make_attention_mask(
         segment_ids_q,
         segment_ids_kv,
         jnp.equal,
     )
+    #jax.debug.print(f"segment_ids_q \n {segment_ids_q} \n segment_ids_kv \n {segment_ids_kv}")
+    #jax.debug.print(f"segment_mask: {segment_mask[0,0]}")
     segment_mask_with_id = make_attention_mask(
         segment_ids_q,
         segment_ids_kv,
@@ -466,15 +472,21 @@ def _segment_ids_pos_to_seqlens_offsets(
             segment_pos_kv,
             jnp.greater_equal,
         )
+        #jax.debug.print(f"causal_mask: {causal_mask[0,0]}")
         attn_mask = jnp.logical_and(segment_mask, causal_mask)
+        #jax.debug.print(f"attn_mask: {attn_mask[0,0]}")
+
 
     swa_mask = make_swa_mask(segment_pos_q, segment_pos_kv, window_size, dtype=jnp.bool)
     attn_mask = jnp.logical_and(attn_mask, swa_mask)
+    #jax.debug.print(f"attn_mask: {attn_mask[0,0]}")
 
     attn_mask_with_id = jnp.where(attn_mask, segment_mask_with_id, 0)
+    #jax.debug.print(f"attn_mask_with_id: {attn_mask_with_id[0,0]}")
     q_seqlen, q_offset, kv_seqlen, kv_offset = _mask_to_seqlens_offset(
         attn_mask_with_id, max_segments_per_seq
     )
+    #jax.debug.breakpoint()
     return q_seqlen, kv_seqlen, q_offset, kv_offset
 
 
@@ -1127,5 +1139,5 @@ def fused_attn(
         context_checkpoint_name=context_checkpoint_name,
     )
     breakpoint()
-    print(f"output: {output}")
+    #print(f"output: {output}")
     return output
