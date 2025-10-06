@@ -1489,7 +1489,8 @@ def assert_allclose(
         for idx in diff_indices:
             idx_tuple = tuple(idx)
             mismatch_counter += 1
-            # print(f"Index {idx_tuple}: a={actual[idx_tuple]}, d={desired[idx_tuple]}")
+            if mismatch_counter < 1024:
+                print(f"Index {idx_tuple}: a={actual[idx_tuple]}, d={desired[idx_tuple]}")
         # Batch 0 and head 0
         # for seq_idx in range(actual.shape[1]):
         #     #print("Mismatch at positions:\n", np.argwhere(mismatch_mask[0,:,0,:])) # Pick indices where mask is True
@@ -1641,7 +1642,7 @@ def print_debug_tensor_stats(prefix, tensor, hist=False):
             args += [h[0], h[1]]
             fmt = fmt + "\n  {}\n  {}"
 
-        jax.debug.print(fmt, *args)
+        #jax.debug.print(fmt, *args)
 
 
 @contextmanager
