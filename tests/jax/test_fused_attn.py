@@ -76,7 +76,6 @@ def general_dot_product_attention(
     """
     query, key, value, bias = promote_dtype(query, key, value, bias, dtype=dtype)
     dtype = query.dtype
-    breakpoint()
     b, s_q, h_q, d = query.shape
     _, s_kv, h_kv, _ = key.shape
     assert (h_q % h_kv == 0) and (h_q >= h_kv)
@@ -84,7 +83,7 @@ def general_dot_product_attention(
     grouped_query = jnp.reshape(query, (b, s_q, h_kv, num_groups, d))
     # logits with shape (b, h_kv, num_groups, s_q, s_kv)
     logits = scale_factor * jnp.einsum("...qhgd,...khd->...hgqk", grouped_query, key)
-
+    #jax.debug.breakpoint()
     if bias is not None:
         # reshape logits without groups
         logits = logits.reshape((b, h_kv * num_groups, s_q, s_kv))
@@ -94,22 +93,24 @@ def general_dot_product_attention(
         logits = logits.reshape((b, h_kv, num_groups, s_q, s_kv))
 
     if mask is not None:
-        breakpoint()
+        #jax.debug.breakpoint()
         if mask.ndim != logits.ndim:
             mask = jnp.expand_dims(mask, axis=-3)
         logits = jnp.where(mask, jnp.finfo(dtype).min, logits)
-
+    #jax.debug.breakpoint()  
     softmax_out = jax.nn.softmax(logits).astype(dtype)
+    #jax.debug.breakpoint()  
 
     if not deterministic and dropout_rate > 0.0:
         keep_prob = 1.0 - dropout_rate
         keep = jax.random.bernoulli(dropout_rng, keep_prob, softmax_out.shape)
         multiplier = keep.astype(dtype) / jnp.asarray(keep_prob, dtype=dtype)
         softmax_out = softmax_out * multiplier
-    breakpoint()
+    #breakpoint()
     context = jnp.einsum("...hgqk,...khd->...qhgd", softmax_out, value)
     context_shape = query.shape[:-1] + (value.shape[-1],)
     context = jnp.reshape(context, context_shape)
+    #jax.debug.breakpoint()
     return context
 
 
@@ -135,6 +136,30 @@ def make_causal_mask(
         )
     inv_causal_mask = make_attention_mask(segment_pos_q, segment_pos_kv, jnp.greater_equal)
     return inv_causal_mask
+
+#@partial(jax.jit, static_argnums=(0, 1))
+def construct_mask_jax(blocks, length=None) -> Array:
+    """
+    Constructs a boolean mask based on a list of (count, value) blocks.
+    Example:
+        blocks = [(1, 0), (63, 1)] => [False]*1 + [True]*63
+    Optionally, you can pad/truncate to 'length'.
+    """
+    mask_parts = [jnp.full(count, bool(value)) for count, value in blocks]
+    # print(f"mask_parts: {mask_parts}")
+    mask = jnp.concatenate(mask_parts)
+    if length is not None:
+        # Pad or truncate to match 'length'
+        pad_len = max(0, length - mask.shape[0])
+        mask = jnp.concatenate([mask, jnp.zeros(pad_len, dtype=bool)])[:length]
+    return mask
+
+#@partial(jax.jit, static_argnums=(0, 1, 2, 3))
+def construct_masks_jax(batch, total_tokens_q, total_tokens_kv, blocks_list) -> Array:
+    masks = [construct_mask_jax(blocks, total_tokens_kv) for blocks in blocks_list]
+    masks = jnp.stack(masks)
+    masks_final = jnp.broadcast_to(masks, (batch, 1, total_tokens_q, total_tokens_kv))
+    return masks_final
 
 @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
 def make_mask_hardcoded(batch_size, total_tokens_q, total_tokens_kv, num_seg, cp_size) -> Array:
@@ -179,7 +204,7 @@ def make_mask(
     inv_mask = make_attention_mask(
         segment_ids_q, segment_ids_kv, lambda x, y: (jnp.logical_and(jnp.equal(x, y), x != 0))
     )
-    #jax.debug.breakpoint()
+    ##jax.debug.breakpoint()
     #breakpoint()
 
     if segment_pos_q is None:
@@ -221,11 +246,11 @@ def get_seqlens_and_offsets(segment_ids):
         ).squeeze(-1)
 
     offsets = _find_offsets(segment_ids)
-    #jax.debug.breakpoint()
+    ##jax.debug.breakpoint()
     offsets = jnp.insert(offsets, offsets.shape[-1], values=-1, axis=-1)
     seqlens = jnp.insert(seqlens, seqlens.shape[-1], values=0, axis=-1)
     seqlens = jnp.where(seqlens, seqlens, -1)
-    #jax.debug.breakpoint()
+    ##jax.debug.breakpoint()
     return seqlens, offsets
 
 
@@ -421,6 +446,7 @@ class FusedAttnRunner:
 
     def _setup_inputs(self):
         self._check_configs()
+        is_swa_stripe_custom_test_mode = False
 
         # Create a mesh for distributed tests
         self.devices = np.asarray(jax.devices()[: self.number_of_devices]).reshape(*self.mesh_shape)
@@ -434,9 +460,9 @@ class FusedAttnRunner:
         q_shape = (self.batch_size, self.max_seqlen_q, self.num_heads_q, self.head_dim_qk)
         k_shape = (self.batch_size, self.max_seqlen_kv, self.num_heads_kv, self.head_dim_qk)
         v_shape = (self.batch_size, self.max_seqlen_kv, self.num_heads_kv, self.head_dim_v)
-        print(f"q_shape: {q_shape}")
-        print(f"k_shape: {k_shape}")
-        print(f"v_shape: {v_shape}")
+        # print(f"q_shape: {q_shape}")
+        # print(f"k_shape: {k_shape}")
+        # print(f"v_shape: {v_shape}")
         if self.attn_bias_type == AttnBiasType.NO_BIAS:
             bias_shape = None
         elif self.bias_shape == BiasShape._1HSS:
@@ -471,24 +497,25 @@ class FusedAttnRunner:
         # self.v = jnp.array(v_np)
 
         #KL code - 2
-        # q_np = np.zeros(q_shape, self.dtype)
-        # k_np = np.zeros(k_shape, self.dtype)
-        # token_numbers_q = range(self.max_seqlen_q)
-        # token_numbers_k = range(self.max_seqlen_kv)
-        # for token_idx in token_numbers_q:
-        #     q_np[0][token_idx][0] = np.ones(self.head_dim_qk, self.dtype) * token_idx
-        # for token_idx in token_numbers_k:
-        #     k_np[0][token_idx][0] = np.ones(self.head_dim_qk, self.dtype) * np.sqrt(self.head_dim_qk)
-        # v_np = np.ones(v_shape, self.dtype)
-        # # Set cols at multiples
-        # v_np[0,::4, 0, :] = np.arange(v_np.shape[3])
-        # self.q = jnp.array(q_np)
-        # self.k = jnp.array(k_np)
-        # self.v = jnp.array(v_np)
-        # print(f"self.q: {self.q}, \n self.k: {self.k}, \n")
-        # # import sys
-        # # with np.printoptions(threshold=sys.maxsize):
-        # #     print(f"self.v: {self.v}")
+        if is_swa_stripe_custom_test_mode:
+            q_np = np.zeros(q_shape, self.dtype)
+            k_np = np.zeros(k_shape, self.dtype)
+            token_numbers_q = range(self.max_seqlen_q)
+            token_numbers_k = range(self.max_seqlen_kv)
+            for token_idx in token_numbers_q:
+                q_np[0][token_idx][0] = np.ones(self.head_dim_qk, self.dtype) * token_idx
+            for token_idx in token_numbers_k:
+                k_np[0][token_idx][0] = np.ones(self.head_dim_qk, self.dtype) * np.sqrt(self.head_dim_qk)
+            v_np = np.ones(v_shape, self.dtype)
+            # Set cols at multiples
+            v_np[0,::4, 0, :] = np.arange(v_np.shape[3])
+            self.q = jnp.array(q_np)
+            self.k = jnp.array(k_np)
+            self.v = jnp.array(v_np)
+        #print(f"self.q: {self.q}, \n self.k: {self.k}, \n")
+        # import sys
+        # with np.printoptions(threshold=sys.maxsize):
+        #     print(f"self.v: {self.v}")
         breakpoint()
 
         if self.attn_bias_type != AttnBiasType.NO_BIAS:
@@ -594,12 +621,15 @@ class FusedAttnRunner:
                     # min_segment_len is to force kv_len >= q_len because cuDNN kernels failed
                     # TODO(rewang): Remove this constrain after cuDNN supports
                     min_segment_size = 1
+                    #print(f"min_segment_len: {min_segment_len}")
                     if min_segment_len is not None:
                         min_segment_size = min_segment_len[i][seg_id]
+                        #print(f"min_segment_size: {min_segment_size}")
                     segment_size = rng.integers(min_segment_size, max_segment_size + 1)
                     if current_pos + segment_size > sequence_length:
                         break
                     segment_end = current_pos + segment_size
+                    #print(f"segment_end: {segment_end} = current_pos: {current_pos} + segment_size: {segment_size}")
                     segment_ids[i, current_pos:segment_end] = segment_id
                     segment_pos[i, current_pos:segment_end] = np.arange(segment_size)
                     if with_segment_pad:
@@ -617,9 +647,9 @@ class FusedAttnRunner:
 
         if self.qkv_layout.is_thd():
             # KL code
-            is_test_mode = True
+            is_test_mode = False
             is_thd_regular = False
-            is_striped_segments_size_256 = True
+            is_striped_segments_size_256 = False
             is_striped_segments_size_128 = False
             is_striped_segments_size_64 = False
             is_striped_segments_size_32 = False
@@ -634,14 +664,16 @@ class FusedAttnRunner:
                     self.num_segments_per_seq = 128
                 elif is_striped_segments_size_32:
                     self.num_segments_per_seq = 256
+                elif is_swa_stripe_custom_test_mode:
+                    self.num_segments_per_seq = 6
                 else:
                     self.num_segments_per_seq = self.max_seqlen_q
             else:
-                self.num_segments_per_seq = 2
+                self.num_segments_per_seq = 6
             print(f"self.num_segments_per_seq: {self.num_segments_per_seq}")
             if not is_test_mode:
                 self.segment_ids_q, self.segment_pos_q, self.pad_q = generate_random_segment_ids(
-                    self.batch_size, self.max_seqlen_q, self.num_segments_per_seq, seed=42
+                    self.batch_size, self.max_seqlen_q, self.num_segments_per_seq, seed=30, with_segment_pad=True
                 )
             # KL code
             # Insert custom segment ids and pos and q to replicate test behavior
@@ -669,6 +701,25 @@ class FusedAttnRunner:
                 test_cp_size = 8
                 if is_striped_segments_size_256 or is_striped_segments_size_128 or is_striped_segments_size_64 or is_striped_segments_size_32:
                     self.segment_ids_q, self.segment_pos_q, self.pad_q = gen_custom_tokens_segment_ids_3(batch_size=self.batch_size, total_tokens=self.max_seqlen_q, num_seg=self.num_segments_per_seq, cp_size=test_cp_size, is_q=True)
+                elif is_swa_stripe_custom_test_mode:
+                    # KL code 3
+                    # Insert custom segment ids and pos and q to replicate test behavior
+                    # - - - - 0 0 0 0 0 0 0 0 0 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+                    # - - - - - 0 0 0 0 0 0 0 0 0 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+                    # - - - - - - 0 0 0 0 0 0 0 0 0 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+                    # - - - - - - - - - - - - - - - 1 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+                    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 2 2 2 2 2 2 2 2 2 - - - - - - - - - - - - - - - - - - -
+                    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 2 2 2 2 2 2 2 2 2 - - - - - - - - - - - - - - - - - -
+                    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 2 2 2 2 2 2 2 2 2 - - - - - - - - - - - - - - - - -
+                    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 2 2 2 2 2 2 2 2 2 - - - - - - - - - - - - - - - -
+                    self.segment_ids_q = np.array([[1, 1, 1, 2, 3, 3, 3, 3],
+                                                [1, 1, 1, 2, 3, 3, 3, 3]], dtype=np.int32)
+                    
+                    self.segment_pos_q = np.array([[0, 1, 2, 0, 0, 1, 2, 3],
+                                                [0, 1, 2, 0, 0, 1, 2, 3]], dtype=np.int32)
+                    
+                    self.pad_q = np.array([[0, 0, 0, 0, 0, 0, 0, 0],
+                                        [0, 0, 0, 0, 0, 0, 0, 0]], dtype=np.int32)
                 else: 
                     self.segment_ids_q, self.segment_pos_q, self.pad_q = gen_custom_tokens_segment_ids_2(batch_size=self.batch_size, total_tokens=self.max_seqlen_q, num_seg=self.num_segments_per_seq, cp_size=test_cp_size, is_q=True)
             breakpoint()
@@ -682,15 +733,39 @@ class FusedAttnRunner:
                     self.segment_pos_kv = self.segment_pos_q
                     self.pad_kv = self.pad_q
             else:
-                # Force kv_len >= q_len for swa, otherwise, cuDNN kernels don't support
-                min_segment_len = None if self.window_size is None else self.seqlens_q
-                self.segment_ids_kv, self.segment_pos_kv, self.pad_kv = generate_random_segment_ids(
-                    self.batch_size,
-                    self.max_seqlen_kv,
-                    self.num_segments_per_seq,
-                    seed=2024,
-                    min_segment_len=min_segment_len,
-                )
+                if is_swa_stripe_custom_test_mode:
+                    # KL code 3
+                    # Insert custom segment ids and pos and k to replicate test behavior
+                    # - - - - 0 0 0 0 0 0 0 0 0 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+                    # - - - - - 0 0 0 0 0 0 0 0 0 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+                    # - - - - - - 0 0 0 0 0 0 0 0 0 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+                    # - - - - - - - - - - - - - - - 1 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+                    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 2 2 2 2 2 2 2 2 2 - - - - - - - - - - - - - - - - - - -
+                    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 2 2 2 2 2 2 2 2 2 - - - - - - - - - - - - - - - - - -
+                    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 2 2 2 2 2 2 2 2 2 - - - - - - - - - - - - - - - - -
+                    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 2 2 2 2 2 2 2 2 2 - - - - - - - - - - - - - - - -
+                    self.segment_ids_kv = np.array([[0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                                                    [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], dtype=np.int32)
+                    
+                    self.segment_pos_kv = np.array([[0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                                                    [0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], dtype=np.int32)
+                    
+                    self.pad_kv = np.array([[1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                                            [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]], dtype=np.int32)
+                    breakpoint()
+                else:
+                    # Force kv_len >= q_len for swa, otherwise, cuDNN kernels don't support
+                    min_segment_len = None
+                    if self.window_size is not None or self.attn_mask_type.is_bottom_right(): #SWA or BRCM requires kv_len >= q_len
+                        min_segment_len = self.seqlens_q
+                    self.segment_ids_kv, self.segment_pos_kv, self.pad_kv = generate_random_segment_ids(
+                        self.batch_size,
+                        self.max_seqlen_kv,
+                        self.num_segments_per_seq,
+                        seed=2024,
+                        with_segment_pad=True,
+                        min_segment_len=min_segment_len,
+                    )
             # self.segment_ids_kv = np.array([[1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0],
             #                                [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0]], dtype=np.int32)
             
@@ -719,7 +794,23 @@ class FusedAttnRunner:
         # print(f"self.seqlens_kv: {self.seqlens_kv}, \n self.offsets_kv: { self.offsets_kv} \n")
         # For reference code
         if is_test_mode and not is_thd_regular:
-            self.mask = make_mask_hardcoded(batch_size=self.batch_size, total_tokens_q=self.max_seqlen_q, total_tokens_kv=self.max_seqlen_kv, num_seg=self.num_segments_per_seq, cp_size=test_cp_size)
+            if is_swa_stripe_custom_test_mode:
+                # Convert the list of lists to a tuple of tuples
+                # blocks_list = tuple(tuple(block) for block in [
+                # [(4, 1), (9, 0), (51, 1)],
+                # [(5, 1), (9, 0), (50, 1)],
+                # [(6, 1), (9, 0), (49, 1)],
+                # [(15, 1), (1, 0), (48, 1)],
+                # [(36, 1), (9, 0), (19, 1)],
+                # [(37, 1), (9, 0), (18, 1)],
+                # [(38, 1), (9, 0), (17, 1)],
+                # [(39, 1), (9, 0), (16, 1)]
+                # ])
+                # self.mask = construct_masks_jax(batch=self.batch_size,total_tokens_q=self.max_seqlen_q, total_tokens_kv=self.max_seqlen_kv, blocks_list=blocks_list)
+                #print(f"Comparing self.mask hardcoded and make_mask: {self.mask == make_mask(self.segment_ids_q,self.segment_ids_kv,self.segment_pos_q,self.segment_pos_kv,self.attn_mask_type,self.window_size,)}")
+                self.mask == make_mask(self.segment_ids_q,self.segment_ids_kv,self.segment_pos_q,self.segment_pos_kv,self.attn_mask_type,self.window_size)
+            else:
+                self.mask = make_mask_hardcoded(batch_size=self.batch_size, total_tokens_q=self.max_seqlen_q, total_tokens_kv=self.max_seqlen_kv, num_seg=self.num_segments_per_seq, cp_size=test_cp_size)
         else:
             self.mask = make_mask(
                 self.segment_ids_q,
@@ -768,10 +859,10 @@ class FusedAttnRunner:
         # ]]
 
         breakpoint()
-        #import sys
-        #with np.printoptions(threshold=sys.maxsize):
-        #    print(f"self.mask: {self.mask[0, 0, 0:10]}")
-        #print(f"self.mask: {self.mask}")
+        import sys
+        with np.printoptions(threshold=sys.maxsize):
+            #print(f"test self.mask: {self.mask[0, 0]}")
+            print("test")
         if self.cp_size > 1 and self.cp_load_balanced:
             if self.qkv_layout.is_thd():
                 reorder_strategy = ReorderStrategy.Striped
@@ -942,6 +1033,7 @@ class FusedAttnRunner:
             "context_parallel_strategy": self.cp_strategy,
             "context_parallel_causal_load_balanced": self.cp_load_balanced,
         }
+        breakpoint()
 
         customcall_fused_dpa_jit = jit(
             partial(customcall_fused_dpa, **kwargs),
@@ -955,8 +1047,9 @@ class FusedAttnRunner:
                 self.dropout_rng_sharding,
             ],
         )
+        #customcall_fused_dpa_jit = partial(customcall_fused_dpa, **kwargs)
 
-        iter = 10
+        iter = 1
         for idx in range(iter):
             with self.mesh, fp8_autocast(mesh_resource=self.mesh_resource):
                 primitive_out = customcall_fused_dpa_jit(*customcall_args)
@@ -1052,23 +1145,30 @@ class FusedAttnRunner:
             grad_shardings = (self.qkvo_sharding, self.qkvo_sharding, self.qkvo_sharding)
 
         # Use FP16/BF16 to sum the results may cause overflow, use FP32 for the summation
-        jitted_primitive = jit(
-            value_and_grad(
-                lambda q, k, v, bias, *args: grad_func(
-                    customcall_fused_dpa, q, k, v, bias, *args, cp_reverse_out=True, **kwargs
+        # jitted_primitive = jit(
+        #     value_and_grad(
+        #         lambda q, k, v, bias, *args: grad_func(
+        #             customcall_fused_dpa, q, k, v, bias, *args, cp_reverse_out=True, **kwargs
+        #         ),
+        #         arg_nums,
+        #     ),
+        #     in_shardings=(
+        #         self.qkvo_sharding,
+        #         self.qkvo_sharding,
+        #         self.qkvo_sharding,
+        #         self.bias_sharding,
+        #         self.seq_desc_sharding,
+        #         self.dropout_rng_sharding,
+        #     ),
+        #     out_shardings=(None, grad_shardings),
+        # )
+        jitted_primitive = value_and_grad(
+            lambda q, k, v, bias, *args: grad_func(
+                customcall_fused_dpa, q, k, v, bias, *args, cp_reverse_out=True, **kwargs
                 ),
                 arg_nums,
-            ),
-            in_shardings=(
-                self.qkvo_sharding,
-                self.qkvo_sharding,
-                self.qkvo_sharding,
-                self.bias_sharding,
-                self.seq_desc_sharding,
-                self.dropout_rng_sharding,
-            ),
-            out_shardings=(None, grad_shardings),
-        )
+                )
+
         jitted_reference = jit(
             value_and_grad(
                 lambda q, k, v, bias, *args: grad_func(jax_dpa, q, k, v, bias, *args, **kwargs),
@@ -1160,6 +1260,7 @@ class FusedAttnRunner:
         pytest.param(AttnMaskType.PADDING_MASK, id="PADDING"),
         pytest.param(AttnMaskType.CAUSAL_MASK, id="CAUSAL"),
         pytest.param(AttnMaskType.PADDING_CAUSAL_MASK, id="PADDING_CAUSAL"),
+        #KL code
         pytest.param(AttnMaskType.PADDING_CAUSAL_BOTTOM_RIGHT_MASK, id="PADDING_CAUSAL_BOTTOM_RIGHT_MASK"),
     ],
 )
@@ -1191,17 +1292,40 @@ class FusedAttnRunner:
             jnp.bfloat16,
             id="2-2048-1024-12-12-64-64-BF16-CROSS",
         ),
-        # pytest.param(
-        #     2,
-        #     8,
-        #     64,
-        #     12,
-        #     12,
-        #     64,
-        #     64,
-        #     jnp.bfloat16,
-        #     id="2-8-64-12-12-64-64-BF16-CROSS",
-        # ),
+        #KL code
+        pytest.param(
+            2,
+            1024,
+            2048,
+            12,
+            12,
+            64,
+            64,
+            jnp.bfloat16,
+            id="2-1024-2048-12-12-64-64-BF16-CROSS",
+        ),
+        pytest.param(
+            2,
+            8,
+            64,
+            12,
+            12,
+            64,
+            64,
+            jnp.bfloat16,
+            id="2-8-64-12-12-64-64-BF16-CROSS",
+        ),
+        pytest.param(
+            2,
+            16,
+            64,
+            12,
+            12,
+            64,
+            64,
+            jnp.bfloat16,
+            id="2-16-64-12-12-64-64-BF16-CROSS",
+        ),
         pytest.param(
             2,
             16384,
@@ -1329,8 +1453,12 @@ class TestFusedAttn:
         It is kept for development and debugging
         """
         window_size = None
+        is_custom_swa_stripe = False
         if swa:
-            window_size = (s_kv // 10, 0)
+            if is_custom_swa_stripe:
+                window_size = (8, 0)
+            else:
+                window_size = (s_kv // 10, 0)
         runner = FusedAttnRunner(
             b,
             s_q,
@@ -1380,8 +1508,12 @@ class TestFusedAttn:
         Test backward with parameterized configs
         """
         window_size = None
+        is_custom_swa_stripe = False
         if swa:
-            window_size = (s_kv // 10, 0)
+            if is_custom_swa_stripe:
+                window_size = (8, 0)
+            else:
+                window_size = (s_kv // 10, 0)
         runner = FusedAttnRunner(
             b,
             s_q,
