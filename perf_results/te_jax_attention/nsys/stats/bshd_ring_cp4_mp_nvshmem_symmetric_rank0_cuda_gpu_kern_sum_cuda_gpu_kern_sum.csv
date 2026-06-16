@@ -1,0 +1,32 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+37.9,87570063,12,7297505.3,7472860.0,6688427,7572269,361770.9,cudnn_generated_fort_native_sdpa_sm100_flash_bprop_f16_knob_2_128x128x128_1x4x1_cga1x1x1_kernel0_0
+30.5,70428981,24,2934540.9,2896805.0,1604483,4537287,1174762.1,ncclDevKernel_SendRecv(ncclDevKernelArgsStorage<(unsigned long)4096>)
+9.7,22385316,9,2487257.3,2307171.0,2233092,2916613,321612.7,cudnn_generated_fort_native_sdpa_sm100_flash_fprop_f16_knob_1_128x128x128_4x1x1_cga2x1x1_kernel0_0
+8.6,19912607,9,2212511.9,2212388.0,2212291,2213284,306.4,input_concatenate_fusion_2
+3.4,7862061,3,2620687.0,2620677.0,2617604,2623780,3088.0,cudnn_generated_fort_native_sdpa_sm100_flash_fprop_f16_knob_1_128x128x128_4x1x1_cga1x1x1_kernel0_0
+1.4,3322309,3,1107436.3,1107361.0,1106978,1107970,500.3,input_concatenate_fusion_3
+1.3,3052966,18,169609.2,163025.0,161921,204640,14364.4,loop_pad_fusion_1
+1.2,2877828,12,239819.0,216768.0,206912,316544,46248.8,"void cudnn::fusion::compute_dot_do_o_specialized<(bool)1, (int)128>(const void *, const void *, void *, void *, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, float, const void *, const void *, const void *, const void *, const void *, bool, const void *, void *, const void *, int, int, int, int, int, int, int, int, int, float *, float *, float *)"
+1.1,2575715,27,95396.9,96032.0,71584,107488,9568.2,wrapped_slice_5
+0.9,2059204,3,686401.3,686369.0,683041,689794,3376.6,loop_pad_fusion_12
+0.8,1756482,12,146373.5,117040.0,116096,237504,53606.5,"void cudnn::fusion::convert_dq_to_16bits<(bool)1>(const void *, void *, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, const float *, const float *, const float *, float *, const void *, void *, void *, bool, bool)"
+0.6,1345890,3,448630.0,448961.0,447008,449921,1484.4,loop_subtract_fusion
+0.6,1331778,3,443926.0,443969.0,442176,445633,1728.9,loop_add_fusion
+0.5,1107297,3,369099.0,369089.0,368448,369760,656.1,loop_add_fusion_1
+0.4,933282,9,103698.0,103008.0,100288,108064,2348.6,wrapped_slice_10
+0.4,860832,3,286944.0,286976.0,286560,287296,369.0,input_convert_reduce_fusion
+0.2,459522,3,153174.0,153217.0,152960,153345,196.1,wrapped_slice_25
+0.2,444032,3,148010.7,147840.0,147360,148832,750.7,wrapped_slice_24
+0.1,124353,9,13817.0,12896.0,8352,27649,6067.4,input_subtract_transpose_fusion_2
+0.0,101888,21,4851.8,4128.0,480,14144,4589.9,loop_multiply_fusion_12
+0.0,89312,9,9923.6,9536.0,7328,14240,2246.9,wrapped_slice_9
+0.0,66144,3,22048.0,22688.0,17216,26240,4545.9,ncclDevKernel_AllReduce_Sum_f32_RING_LL(ncclDevKernelArgsStorage<(unsigned long)4096>)
+0.0,57504,9,6389.3,3872.0,3648,12896,3949.2,loop_pad_fusion
+0.0,44321,12,3693.4,2240.0,1056,7456,2864.1,"transformer_engine::fused_attn::populate_rng_state_kernel(long *, const long *, long)"
+0.0,30848,9,3427.6,2272.0,1984,8128,2151.6,set_case_condition
+0.0,25120,3,8373.3,7136.0,5408,12576,3740.8,loop_compare_fusion
+0.0,20544,3,6848.0,6784.0,6304,7456,578.7,loop_compare_fusion_2
+0.0,6208,3,2069.3,2048.0,1984,2176,97.8,input_reduce_fusion
+0.0,4608,3,1536.0,1664.0,768,2176,712.7,loop_broadcast_fusion
+0.0,2848,3,949.3,864.0,800,1184,205.7,loop_compare_fusion_1
+0.0,2496,3,832.0,896.0,672,928,139.5,loop_broadcast_fusion_1

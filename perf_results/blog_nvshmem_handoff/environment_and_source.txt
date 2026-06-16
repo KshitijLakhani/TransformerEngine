@@ -1,0 +1,86 @@
+## nvidia-smi -L
+GPU 0: NVIDIA GB200 (UUID: GPU-77ab4007-f445-91c3-f782-a70ee7f733b3)
+GPU 1: NVIDIA GB200 (UUID: GPU-f9d1a3d0-4a96-d979-c86f-c78a98882575)
+GPU 2: NVIDIA GB200 (UUID: GPU-f1dfb183-1704-eb47-37c9-94009b9623f7)
+GPU 3: NVIDIA GB200 (UUID: GPU-bc5b8dfb-c587-3bb0-11ca-3f265aa7d45f)
+
+## python/jax/te
+jax 0.10.2.dev20260610+39b296a07
+te 2.17.0.dev0+9b06f268
+devices [CudaDevice(id=0), CudaDevice(id=1), CudaDevice(id=2), CudaDevice(id=3)]
+local_device_count 4
+compute_capability_0 100
+cudnn_version 92300
+
+Note: the `local_device_count 4` line above is from a normal single-process
+environment probe. The NVSHMEM reproducer uses one JAX process per GPU because
+the local XLA source below aborts when NVSHMEM is initialized with more than one
+local device per process.
+
+## nvshmem-info
+
+## key XLA source snippets
+            << ", device_count_per_process=" << env->device_count_per_process;
+
+    if (env->process_id == -1) {
+      LOG(FATAL)
+          << "NvshmemCollectives::SetEnvInfo was not called before using "
+             "NVSHMEM API";
+    }
+    if (env->device_count_per_process != 1) {
+      LOG(FATAL) << "NVSHMEM API is only supported with one device per process";
+    }
+    nvshmemx_init_attr_t nvshmem_init_attr = NVSHMEMX_INIT_ATTR_INITIALIZER;
+    nvshmemx_uniqueid_t nvshmem_id = NVSHMEMX_UNIQUEID_INITIALIZER;
+
+    // Initialize NVSHMEM
+    if (std::shared_ptr<xla::KeyValueStoreInterface> kv_store =
+
+absl::StatusOr<std::unique_ptr<Communicator>>
+NvshmemCollectives::CreateCommunicator() {
+  auto comm = std::make_unique<NvshmemCommunicator>(this);
+  return comm;
+}
+
+}  // namespace xla::gpu
+
+// NvshmemCollectives currently does not implement GpuCollectives, so it cannot
+// be used as drop-in replacement of GPU collectives.
+XLA_COLLECTIVES_REGISTER("CUDA", "nvshmem", 0,
+                         std::make_unique<xla::gpu::NvshmemCollectives>());
+
+Interpretation: the single-process SIGABRT is explained by the
+`device_count_per_process != 1` check. After switching to one process per GPU,
+the remaining issue is not the abort; it is that HLO/profile evidence still
+shows the default/NCCL collective path instead of an NVSHMEM backend for TE Ring
+`collective-permute-start` ops.
+
+  return HloPredicateIsOp<HloOpcode::kAllGather, HloOpcode::kAllGatherStart>(
+      instr);
+}
+
+absl::StatusOr<bool> AssignCollectivesMode(
+    HloModule* module, DebugOptions::CollectivesMode mode,
+    bool (*predicate)(const HloInstruction*)) {
+  if (mode == DebugOptions::COLLECTIVES_PRIVATE_MEMORY) {
+    return false;
+  }
+
+  bool changed = false;
+  for (HloComputation* comp : module->computations()) {
+    for (HloInstruction* instr : comp->instructions()) {
+      if (!predicate(instr)) {
+        continue;
+      }
+
+      ASSIGN_OR_RETURN(auto config, instr->backend_config<GpuBackendConfig>());
+      config.mutable_collective_backend_config()->set_collectives_mode(mode);
+      RETURN_IF_ERROR(instr->set_backend_config(config));
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+}  // namespace
+
